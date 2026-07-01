@@ -300,5 +300,13 @@ export const feeTracker = {
 
 export const demoUser = {
   id: 'u1', name: 'Alex Lim', email: 'alex.lim@example.com',
-  verifiedCommunities: [{ projectId: 'p1', tier: 'Owner', unit: 'B-21-03', verifiedAt: '2026-03-15' }]
+  communities: [
+    {
+      projectId: 'p1',
+      tier: 'Owner',
+      unit: 'B-21-03',
+      verifiedAt: '2026-03-15',
+      project: { name: 'The Lumina Residences', city: 'Petaling Jaya', state: 'Selangor' }
+    }
+  ]
 }
