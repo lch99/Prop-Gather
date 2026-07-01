@@ -1,0 +1,144 @@
+import { useEffect, useRef, useState } from 'react'
+import { api } from '../../api'
+import { C, card, button, badge, tierColor } from '../../theme'
+import { useAttachments, AttachmentPicker, AttachmentList } from '../../components/Attachments'
+
+const channelIcons = {
+  general: '# general',
+  defects: '# defects',
+  announcements: '# announcements',
+  facilities: '# facilities',
+  renovation: '# renovation'
+}
+
+export default function ChatTab({ projectId }) {
+  const [channels, setChannels] = useState([])
+  const [active, setActive] = useState('general')
+  const [messages, setMessages] = useState([])
+  const [text, setText] = useState('')
+  const { attachments, addFiles, removeAttachment, error: uploadError, reset: resetAttachments } = useAttachments(4)
+  const bottomRef = useRef(null)
+
+  useEffect(() => {
+    api.getChatChannels(projectId).then(chs => {
+      setChannels(chs)
+      setActive(chs[0] || 'general')
+    })
+  }, [projectId])
+
+  useEffect(() => {
+    if (!active) return
+    api.getChatMessages(projectId, active).then(setMessages)
+  }, [projectId, active])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const send = async () => {
+    if (!text.trim() && attachments.length === 0) return
+    const msg = await api.sendChatMessage(projectId, active, text.trim(), attachments)
+    setMessages(m => [...m, msg])
+    setText('')
+    resetAttachments()
+  }
+
+  // Residents-only platform — every verified resident can post in every channel.
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 20, height: 560 }}>
+      <div style={{ ...card, padding: 12, overflowY: 'auto' }}>
+        <div style={{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>CHANNELS</div>
+        {channels.map(ch => (
+          <button
+            key={ch}
+            onClick={() => setActive(ch)}
+            style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              width: '100%', textAlign: 'left', padding: '8px 8px',
+              background: active === ch ? C.blueLight : 'transparent',
+              color: active === ch ? C.blue : C.text,
+              border: 'none', borderRadius: C.radiusSm, fontSize: 13, fontWeight: active === ch ? 700 : 400,
+              marginBottom: 2
+            }}
+          >
+            <span>{channelIcons[ch] || `# ${ch}`}</span>
+          </button>
+        ))}
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+          <button style={{ ...button('outline'), width: '100%', fontSize: 12 }}>+ Propose channel</button>
+        </div>
+      </div>
+
+      <div style={{ ...card, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontWeight: 700, color: C.navy }}>{channelIcons[active] || `# ${active}`}</div>
+          <span style={badge(C.success, C.successBg)}>● 12 online</span>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {messages.length === 0 && (
+            <div style={{ color: C.textMuted, textAlign: 'center', marginTop: 40 }}>No messages yet — be the first to say hello!</div>
+          )}
+          {messages.map(m => (
+            <div key={m.id}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
+                <span style={{ fontWeight: 700, fontSize: 13 }}>{m.sender}</span>
+                {m.unit && m.unit !== '-' && <span style={{ fontSize: 12, color: C.textMuted }}>{m.unit}</span>}
+                <span style={{ ...badge(tierColor(m.tier), `${tierColor(m.tier)}1a`), fontSize: 11 }}>{m.tier}</span>
+                {m.verified && <span style={{ fontSize: 11, color: C.success }}>✓</span>}
+                <span style={{ fontSize: 11, color: C.textFaint, marginLeft: 'auto' }}>{m.time}</span>
+              </div>
+              {m.text && (
+                <div style={{ fontSize: 14, color: C.text, background: '#f6f7f9', padding: '8px 12px', borderRadius: C.radiusSm, display: 'inline-block', maxWidth: '85%' }}>
+                  {m.text}
+                </div>
+              )}
+              <AttachmentList attachments={m.attachments} thumb={140} style={{ marginTop: m.text ? 6 : 0 }} />
+            </div>
+          ))}
+          <div ref={bottomRef} />
+        </div>
+        <div style={{ padding: 12, borderTop: `1px solid ${C.border}`, display: 'grid', gap: 8 }}>
+          {(attachments.length > 0 || uploadError) && (
+            <AttachmentPicker
+              attachments={attachments}
+              addFiles={addFiles}
+              removeAttachment={removeAttachment}
+              error={uploadError}
+              compact
+            />
+          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            {attachments.length === 0 && !uploadError && (
+              <label
+                title="Attach a photo or file"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                  padding: '0 12px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm,
+                  background: C.blueLight, color: C.blue, fontSize: 18
+                }}
+              >
+                📎
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,.pdf,.doc,.docx"
+                  onChange={e => { addFiles(e.target.files); e.target.value = '' }}
+                  style={{ display: 'none' }}
+                />
+              </label>
+            )}
+            <input
+              value={text}
+              onChange={e => setText(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && send()}
+              placeholder="Type a message..."
+              style={{ flex: 1, padding: '10px 12px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 14, background: '#fff' }}
+            />
+            <button style={button('primary')} onClick={send}>Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

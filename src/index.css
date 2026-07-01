@@ -1,0 +1,328 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: 'Nunito', -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: #fbf7fd;
+  color: #1a1410;
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+button:active {
+  transform: translateY(1px);
+  opacity: 1;
+}
+
+input, textarea, select {
+  font-family: inherit;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 1px;
+  border-color: #8b5cf6 !important;
+}
+
+.pg-card-hover {
+  transition: transform .18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow .18s ease, border-color .18s ease;
+}
+
+.pg-card-hover:hover {
+  transform: translateY(-4px) scale(1.008);
+  box-shadow: 0 12px 32px rgba(76, 29, 149, 0.12);
+  border-color: #d6c8ec;
+}
+
+.pg-fade-in {
+  animation: pg-fade-in .3s ease;
+}
+
+@keyframes pg-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pg-pop {
+  animation: pg-pop .3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes pg-pop {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.pg-float {
+  animation: pg-float 7s ease-in-out infinite;
+}
+
+@keyframes pg-float {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(0, -14px); }
+}
+
+/* slowly drifting gradient backdrop for the hero — feels alive without being distracting */
+.pg-hero-anim {
+  background-size: 200% 200%;
+  animation: pg-hero-shift 18s ease infinite;
+}
+
+@keyframes pg-hero-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.pg-gradient-text {
+  background: linear-gradient(135deg, #fde68a 0%, #fbcfe8 45%, #ffffff 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: pg-sheen 6s ease-in-out infinite;
+}
+
+@keyframes pg-sheen {
+  0%, 100% { background-position: 0% center; }
+  50% { background-position: 100% center; }
+}
+
+/* one-time soft shine sweep on entrance (e.g. primary CTAs / featured cards) */
+.pg-shine {
+  position: relative;
+  overflow: hidden;
+}
+
+.pg-shine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-18deg);
+  animation: pg-shine-sweep 5.5s ease-in-out infinite;
+}
+
+@keyframes pg-shine-sweep {
+  0% { left: -120%; }
+  22%, 100% { left: 140%; }
+}
+
+/* the "view" arrow nudges right when its card is hovered — a clear "this is clickable" cue */
+.pg-arrow {
+  display: inline-block;
+  transition: transform .2s ease;
+}
+
+.pg-card-hover:hover .pg-arrow {
+  transform: translateX(5px);
+}
+
+/* the action footer brightens on hover to reinforce the affordance */
+.pg-card-hover .pg-cta {
+  transition: background .2s ease, color .2s ease;
+}
+
+.pg-card-hover:hover .pg-cta {
+  background: #f3ecfc;
+}
+
+/* shimmering skeleton blocks while content loads */
+.pg-skel {
+  background: linear-gradient(90deg, #efe7f8 25%, #f7f1fc 37%, #efe7f8 63%);
+  background-size: 400% 100%;
+  animation: pg-skel 1.4s ease infinite;
+  border-radius: 8px;
+}
+
+@keyframes pg-skel {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* forum layout: single column on phones (categories stack above threads),
+   two columns (category rail + threads) from tablet up */
+.pg-forum-grid {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .pg-forum-grid {
+    grid-template-columns: 220px 1fr;
+  }
+}
+
+/* on phones the category list becomes a compact, wrapping chip row instead of a tall stack */
+@media (max-width: 767px) {
+  .pg-forum-cats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .pg-forum-cats > div:first-child {
+    width: 100%;
+  }
+  .pg-forum-cats button {
+    width: auto !important;
+    display: inline-block !important;
+    margin-bottom: 0 !important;
+    border: 1px solid #ece3f6 !important;
+  }
+}
+
+/* floating "Contact Us" button — full pill on desktop, compact icon-only circle on phones
+   so it never covers form buttons or links on small screens */
+.pg-fab {
+  padding: 13px 20px;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.pg-fab:hover {
+  transform: translateY(-2px);
+}
+
+@media (max-width: 640px) {
+  .pg-fab {
+    padding: 14px;
+  }
+  .pg-fab-label {
+    display: none;
+  }
+}
+
+/* discover page: stats row + request button */
+.pg-hero-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+/* discover page: search bar inputs — stacked on phones, inline on wider screens */
+.pg-discover-search {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pg-discover-search-filters {
+  display: flex;
+  gap: 10px;
+  flex: 1 1 auto;
+}
+
+@media (max-width: 640px) {
+  /* stack the request button below the stat chips on phones */
+  .pg-hero-bottom {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  /* shrink stat chips so all 3 fit in one row */
+  .pg-stat-chips > div {
+    min-width: 0 !important;
+    padding: 6px 11px !important;
+  }
+
+  /* full-width text input, then state + type selects side-by-side below */
+  .pg-discover-search {
+    flex-direction: column;
+  }
+
+  .pg-discover-search-filters {
+    width: 100%;
+  }
+
+  .pg-discover-search-filters select {
+    flex: 1 1 0;
+  }
+
+  /* !important overrides the inline flex: '2 1 260px' — without it the 260px basis
+     becomes the height in column direction, making the input extremely tall */
+  .pg-discover-search input {
+    flex: none !important;
+    width: 100%;
+  }
+
+  /* logo takes its own full row on mobile */
+  .pg-header-logo {
+    flex: 0 0 100%;
+  }
+
+  /* nav + user section share the second row; nav items use short labels */
+  .pg-header-nav {
+    flex-wrap: nowrap !important;
+  }
+
+  .pg-nav-full { display: none; }
+  .pg-nav-short { display: inline; }
+
+  /* tighter nav item sizing so all 3 fit beside the logout button */
+  .pg-header-nav a {
+    padding: 6px 10px !important;
+    font-size: 13px !important;
+  }
+
+  /* hide name on mobile — avatar initials are enough beside the logout button */
+  .pg-header-username {
+    display: none;
+  }
+}
+
+/* desktop: show full labels, hide short labels */
+@media (min-width: 641px) {
+  .pg-nav-full { display: inline; }
+  .pg-nav-short { display: none; }
+}
+
+/* respect users who prefer reduced motion — keeps the design accessible */
+@media (prefers-reduced-motion: reduce) {
+  .pg-float, .pg-hero-anim, .pg-gradient-text, .pg-shine::after, .pg-pop, .pg-fade-in, .pg-skel {
+    animation: none !important;
+  }
+  .pg-arrow { transition: none; }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #cdc1e6, #e3bcd2);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
