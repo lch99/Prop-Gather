@@ -3,7 +3,7 @@ import { api } from '../../api'
 import { C, card, badge, button } from '../../theme'
 
 const tierStyle = (tier) => {
-  if (tier === 'Premium') return badge('#7B44AA', '#f3e8fb')
+  if (tier === 'Premium') return badge(C.accent, C.accentLight)
   if (tier === 'Standard') return badge(C.blue, C.blueLight)
   return badge(C.textMuted, C.neutralBg)
 }
@@ -68,7 +68,7 @@ export default function VendorsTab({ projectId }) {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
               <span style={badge(C.warning, C.warningBg)}>★ {v.rating} ({v.reviews} reviews)</span>
               {v.ssmVerified && <span style={badge(C.success, C.successBg)}>✓ Verified Business</span>}
-              {v.ownerRecommended && <span style={badge('#7B44AA', '#f3e8fb')}>👍 Owner Recommended</span>}
+              {v.ownerRecommended && <span style={badge(C.accent, C.accentLight)}>👍 Owner Recommended</span>}
             </div>
             <button style={{ ...button('outline'), width: '100%' }}>View profile & contact</button>
           </div>

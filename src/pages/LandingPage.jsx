@@ -187,9 +187,9 @@ export default function LandingPage() {
             <div key={s.n} style={{ ...card, padding: 28, textAlign: 'center' }}>
               <div style={{
                 width: 56, height: 56, margin: '0 auto 16px', borderRadius: '50%',
-                background: 'linear-gradient(135deg, #6d28d9, #9333ea)', color: '#fff',
+                background: 'linear-gradient(135deg, #4081C6, #5192D2)', color: '#fff',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 24, fontWeight: 800, boxShadow: '0 6px 18px rgba(124,58,237,0.32)'
+                fontSize: 24, fontWeight: 800, boxShadow: '0 6px 18px rgba(64,129,198,0.32)'
               }}>{s.n}</div>
               <h3 style={{ margin: '0 0 8px', color: C.navy, fontSize: 20 }}>{s.title}</h3>
               <p style={{ margin: 0, color: C.textMuted, fontSize: 16, lineHeight: 1.6 }}>{s.text}</p>
@@ -243,10 +243,10 @@ export default function LandingPage() {
           {COMPARE.map(([label, a, b], i) => (
             <div key={label} style={{
               display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr', alignItems: 'center',
-              borderTop: `1px solid ${C.border}`, background: i % 2 ? '#fff' : '#fdfaff'
+              borderTop: `1px solid ${C.border}`, background: i % 2 ? '#fff' : '#fafcfe'
             }}>
               <div style={{ padding: '14px 18px', fontSize: 16, color: C.text, fontWeight: 600 }}>{label}</div>
-              <div style={{ padding: '14px 12px', textAlign: 'center', background: 'rgba(109,40,217,0.04)' }}>
+              <div style={{ padding: '14px 12px', textAlign: 'center', background: 'rgba(64,129,198,0.06)' }}>
                 <Mark on={a} />
               </div>
               <div style={{ padding: '14px 12px', textAlign: 'center' }}>

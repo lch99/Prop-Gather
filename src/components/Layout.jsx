@@ -38,7 +38,7 @@ export default function Layout({ children }) {
         position: 'sticky',
         top: 0,
         zIndex: 50,
-        boxShadow: '0 6px 26px rgba(76, 29, 149, 0.28)',
+        boxShadow: '0 6px 26px rgba(46, 93, 143, 0.28)',
         borderBottom: '1px solid rgba(255,255,255,0.12)'
       }}>
         <div style={{
@@ -47,11 +47,13 @@ export default function Layout({ children }) {
         }}>
           <Link to="/" className="pg-header-logo" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{
-              width: 38, height: 38, borderRadius: 12, background: 'rgba(255,255,255,0.22)',
+              width: 38, height: 38, borderRadius: 12, background: '#fff',
               border: '1px solid rgba(255,255,255,0.45)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 20, backdropFilter: 'blur(4px)', boxShadow: '0 2px 10px rgba(0,0,0,0.10)'
-            }}>🏡</div>
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4,
+              boxShadow: '0 2px 10px rgba(0,0,0,0.10)'
+            }}>
+              <img src="/brand/propgather-icon.png" alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            </div>
             <div>
               <div style={{ fontWeight: 800, fontSize: 19, lineHeight: 1.1, color: '#fff', letterSpacing: '-0.01em' }}>
                 PropGather<span style={{ color: C.brandLight }}>.com</span>
@@ -126,11 +128,11 @@ export default function Layout({ children }) {
             alignItems: 'center',
             gap: 9,
             borderRadius: 999,
-            background: 'linear-gradient(135deg, #6d28d9, #7c3aed)',
+            background: 'linear-gradient(135deg, #C74B54, #D46B72)',
             color: '#fff',
             fontSize: 16,
             fontWeight: 800,
-            boxShadow: '0 8px 24px rgba(124, 58, 237, 0.42)',
+            boxShadow: '0 8px 24px rgba(199, 75, 84, 0.42)',
             border: '2px solid rgba(255,255,255,0.55)'
           }}
         >

@@ -12,8 +12,8 @@ html, body, #root {
 
 body {
   font-family: 'Nunito', -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background: #fbf7fd;
-  color: #1a1410;
+  background: #F7FAFD;
+  color: #20242A;
   font-size: 16px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
@@ -44,9 +44,9 @@ input, textarea, select {
 }
 
 input:focus, textarea:focus, select:focus {
-  outline: 2px solid #c4b5fd;
+  outline: 2px solid #a9c8e8;
   outline-offset: 1px;
-  border-color: #8b5cf6 !important;
+  border-color: #4081C6 !important;
 }
 
 .pg-card-hover {
@@ -55,8 +55,8 @@ input:focus, textarea:focus, select:focus {
 
 .pg-card-hover:hover {
   transform: translateY(-4px) scale(1.008);
-  box-shadow: 0 12px 32px rgba(76, 29, 149, 0.12);
-  border-color: #d6c8ec;
+  box-shadow: 0 12px 32px rgba(64, 129, 198, 0.14);
+  border-color: #c7dbee;
 }
 
 .pg-fade-in {
@@ -99,7 +99,7 @@ input:focus, textarea:focus, select:focus {
 }
 
 .pg-gradient-text {
-  background: linear-gradient(135deg, #fde68a 0%, #fbcfe8 45%, #ffffff 100%);
+  background: linear-gradient(135deg, #fde68a 0%, #f3c6c9 45%, #ffffff 100%);
   background-size: 200% auto;
   -webkit-background-clip: text;
   background-clip: text;
@@ -151,12 +151,12 @@ input:focus, textarea:focus, select:focus {
 }
 
 .pg-card-hover:hover .pg-cta {
-  background: #f3ecfc;
+  background: #eaf2fa;
 }
 
 /* shimmering skeleton blocks while content loads */
 .pg-skel {
-  background: linear-gradient(90deg, #efe7f8 25%, #f7f1fc 37%, #efe7f8 63%);
+  background: linear-gradient(90deg, #e9eff5 25%, #f4f7fa 37%, #e9eff5 63%);
   background-size: 400% 100%;
   animation: pg-skel 1.4s ease infinite;
   border-radius: 8px;
@@ -194,7 +194,7 @@ input:focus, textarea:focus, select:focus {
     width: auto !important;
     display: inline-block !important;
     margin-bottom: 0 !important;
-    border: 1px solid #ece3f6 !important;
+    border: 1px solid #DCE6F0 !important;
   }
 }
 
@@ -319,7 +319,7 @@ input:focus, textarea:focus, select:focus {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #cdc1e6, #e3bcd2);
+  background: linear-gradient(180deg, #9dbfe0, #dba0a5);
   border-radius: 8px;
 }
 

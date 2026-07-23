@@ -61,7 +61,7 @@ function ProgressTimeline({ items }) {
             {item.progress != null && (
               <div style={{ marginBottom: 10 }}>
                 <div style={{ background: C.neutralBg, borderRadius: 999, height: 14, overflow: 'hidden' }}>
-                  <div style={{ width: `${item.progress}%`, height: '100%', background: 'linear-gradient(90deg,#c2410c,#f59e0b)' }} />
+                  <div style={{ width: `${item.progress}%`, height: '100%', background: 'linear-gradient(90deg,#B45309,#f59e0b)' }} />
                 </div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: C.accent, marginTop: 5 }}>{item.progress}% complete</div>
               </div>

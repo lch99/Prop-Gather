@@ -3,7 +3,7 @@ import { api } from '../../../api'
 import { C, card, badge } from '../../../theme'
 
 const categoryColor = (cat) => {
-  if (cat === 'By-Laws') return badge('#7B44AA', '#f3e8fb')
+  if (cat === 'By-Laws') return badge(C.accent, C.accentLight)
   if (cat === 'Circular') return badge(C.warning, C.warningBg)
   if (cat === 'Minutes') return badge(C.success, C.successBg)
   return badge(C.textMuted, C.neutralBg)
