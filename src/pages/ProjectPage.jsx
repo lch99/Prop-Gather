@@ -59,7 +59,8 @@ function LockedGate({ projectId, projectName, isLoggedIn }) {
         only accessible to verified property owners and residents of this building.
       </p>
       <p style={{ margin: '0 0 28px', color: C.textMuted, fontSize: 14, lineHeight: 1.55 }}>
-        To gain access, register and upload your SPA or Strata Title as proof of ownership.
+        To gain access, register and upload your Sale and Purchase Agreement (SPA), a recent utility bill, or a
+        copy of the property title as proof of ownership.
         Admin review takes less than 24 hours.
       </p>
       <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>

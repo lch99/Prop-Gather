@@ -180,7 +180,7 @@ function CommunityJoinModal({ project, onClose }) {
             borderRadius: C.radiusSm, padding: '11px 14px',
             fontSize: 13, color: C.navy, lineHeight: 1.55
           }}>
-            <strong>🔐 Verified owners only.</strong> To join this community you must be a registered property owner of this residence. You will need to upload your SPA or Strata Title as proof during registration.
+            <strong>🔐 Verified owners only.</strong> To join this community you must be a registered property owner of this residence. You will need to upload your Sale and Purchase Agreement (SPA), a recent utility bill, or a copy of the property title as proof during registration.
           </div>
 
           {/* Actions */}

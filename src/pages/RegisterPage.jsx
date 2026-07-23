@@ -6,7 +6,7 @@ import { C, card, button, badge } from '../theme'
 const steps = ['Register', 'Upload proof', 'Admin review', 'Access granted']
 
 const docByTier = {
-  Owner: 'SPA or Strata Title',
+  Owner: 'SPA, utility bill, or property title',
   'House Owner': 'Sale & Purchase Agreement'
 }
 
@@ -79,7 +79,7 @@ export default function RegisterPage() {
             <p><strong>1. Accurate information.</strong> You confirm that all details and documents submitted are true, accurate, and belong to you.</p>
             <p><strong>2. Verification process.</strong> Your application, including any uploaded documents, will be reviewed by a Platform Admin. False or fraudulent submissions may result in rejection or permanent suspension.</p>
             <p><strong>3. Community conduct.</strong> Once verified, you agree to engage respectfully with other residents and to use shared community channels for legitimate property-related discussion only.</p>
-            <p><strong>4. Data usage & document retention.</strong> Your personal information will be used solely to verify your connection to the property and to operate your community account. Any proof document you upload (e.g. SPA, Strata Title, Tenancy Agreement) will be used for verification purposes only and will <strong>not be stored permanently</strong>. Documents are deleted from our systems within 14 days of your application being reviewed, whether approved or rejected. We do not share your documents with third parties.</p>
+            <p><strong>4. Data usage & document retention.</strong> Your personal information will be used solely to verify your connection to the property and to operate your community account. Any proof document you upload (e.g. SPA, utility bill, property title, Tenancy Agreement) will be used for verification purposes only and will <strong>not be stored permanently</strong>. Documents are deleted from our systems within 14 days of your application being reviewed, whether approved or rejected. We do not share your documents with third parties.</p>
             <p><strong>5. Account integrity.</strong> Sharing your verified access with non-residents or misrepresenting your tier (Owner / House Owner) is prohibited and may lead to access being revoked.</p>
           </div>
 

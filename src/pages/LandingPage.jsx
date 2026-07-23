@@ -25,7 +25,7 @@ const PAINS = [
 
 const STEPS = [
   { n: '1', title: 'Find your community', text: "Browse Malaysia's national directory and search for your property by name, city, or state." },
-  { n: '2', title: 'Verify your ownership', text: "Upload your SPA or Strata Title. We confirm you're a genuine owner — that's what keeps it safe." },
+  { n: '2', title: 'Verify your ownership', text: "Upload your Sale and Purchase Agreement (SPA), a recent utility bill, or a copy of the property title. We confirm you're a genuine owner — that's what keeps it safe." },
   { n: '3', title: 'Join & unlock the tools', text: "Once verified, step inside your community's forum, chat, and owner tools." }
 ]
 
@@ -49,7 +49,7 @@ const TESTIMONIALS = [
 
 const FAQS = [
   { q: 'Is PropGather free to use?', a: 'Yes. Browsing the directory and joining your verified community is completely free for residents and owners.' },
-  { q: 'How do you verify that someone is a real owner?', a: 'During registration you upload your SPA or Strata Title. A platform admin reviews it — usually within 24 hours — before granting access.' },
+  { q: 'How do you verify that someone is a real owner?', a: 'During registration you upload your Sale and Purchase Agreement (SPA), a recent utility bill, or a copy of the property title. A platform admin reviews it — usually within 24 hours — before granting access.' },
   { q: 'Is my document and data safe?', a: 'Your proof document is used for verification only and is permanently deleted within 14 days of review. We never sell or share your documents with third parties.' },
   { q: "What if my building isn't listed yet?", a: "Open the directory and use 'Request a missing community'. Tell us the name and location and we'll add it once verified." },
   { q: 'Who can see what I post?', a: "Only verified members of your own community can see your posts and chats — not even your building's management or developer. Your space is private, not public or searchable." },
@@ -297,7 +297,8 @@ export default function LandingPage() {
           <div style={{ maxWidth: 720 }}>
             <h3 style={{ margin: '0 0 8px', color: C.navy, fontSize: 22 }}>Real owners. Real neighbours. No strangers.</h3>
             <p style={{ margin: 0, color: C.text, fontSize: 16.5, lineHeight: 1.6 }}>
-              Every member is verified against their SPA or Strata Title before joining. Your proof document is
+              Every member is verified against their Sale and Purchase Agreement (SPA), a recent utility bill, or a
+              copy of the property title before joining. Your proof document is
               used for verification only and deleted within 14 days — never sold or shared. It's a residents-only
               space: building management and developers have no access, so the only people here are the ones who
               actually live in your building.

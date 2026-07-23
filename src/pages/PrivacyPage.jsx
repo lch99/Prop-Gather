@@ -29,7 +29,8 @@ export default function PrivacyPage() {
               A proof document — one of:
               <ul style={{ marginTop: 4 }}>
                 <li>Sale &amp; Purchase Agreement (SPA)</li>
-                <li>Strata Title</li>
+                <li>A recent utility bill</li>
+                <li>A copy of the property title</li>
               </ul>
             </li>
             <li>Timestamp and record of your explicit consent at the point of document upload</li>
