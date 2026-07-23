@@ -52,7 +52,7 @@ export default function Layout({ children }) {
               display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4,
               boxShadow: '0 2px 10px rgba(0,0,0,0.10)'
             }}>
-              <img src="/brand/propgather-icon.png" alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              <img src={`${import.meta.env.BASE_URL}brand/propgather-icon.png`} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             </div>
             <div>
               <div style={{ fontWeight: 800, fontSize: 19, lineHeight: 1.1, color: '#fff', letterSpacing: '-0.01em' }}>
