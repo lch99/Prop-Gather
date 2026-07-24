@@ -40,10 +40,10 @@ export default function MyCommunitiesPage() {
               <div style={{ color: C.textMuted, fontSize: 13 }}>
                 {c.project.city}, {c.project.state} · Unit {c.unit} · Verified since {c.verifiedAt}
               </div>
-              <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: 13 }}>
-                <span style={{ color: C.text }}>2 unread forum posts</span>
-                <span style={{ color: C.text }}>5 unread chat messages</span>
-                <span style={{ color: C.warning, fontWeight: 600 }}>1 active petition needs attention</span>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                <span style={badge(C.accent, C.accentLight)}>💬 2 unread forum posts</span>
+                <span style={badge(C.accent, C.accentLight)}>🔔 5 unread chat messages</span>
+                <span style={badge(C.warning, C.warningBg)}>⚠️ 1 active petition needs attention</span>
               </div>
             </div>
             <Link to={`/project/${c.projectId}`}>

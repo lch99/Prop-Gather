@@ -191,7 +191,7 @@ export default function ForumTab({ projectId }) {
             <div key={t.id} style={{ ...card, padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {t.pinned && <span style={badge(C.warning, C.warningBg)}>📌 Pinned</span>}
+                  {t.pinned && <span style={badge(C.accent, C.accentLight)}>📌 Pinned</span>}
                   <span style={badge(C.blue, C.blueLight)}>{t.category}</span>
                 </div>
                 <span style={{ fontSize: 12, color: C.textFaint }}>{timeAgo(t.createdAt)}</span>
