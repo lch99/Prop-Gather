@@ -16,9 +16,10 @@ const labelStyle = { fontSize: 13.5, fontWeight: 700, color: C.navy, marginBotto
 export default function AdminReferencesPage() {
   const [projects, setProjects] = useState([])
   const [projectId, setProjectId] = useState('')
-  const [refs, setRefs] = useState([])
+  const [refs, setRefs] = useState(null)
   const [form, setForm] = useState(blankForm())
   const [saving, setSaving] = useState(false)
+  const [justPublished, setJustPublished] = useState(false)
   const { attachments, addFiles, removeAttachment, error: uploadError, reset } = useAttachments()
 
   useEffect(() => {
@@ -29,18 +30,21 @@ export default function AdminReferencesPage() {
   }, [])
 
   const load = () => { if (projectId) api.getReferences(projectId).then(setRefs) }
-  useEffect(() => { load() }, [projectId])
+  useEffect(() => { setRefs(null); load() }, [projectId])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const submit = async () => {
     if (!form.title.trim() || saving) return
     setSaving(true)
+    setJustPublished(false)
     try {
       await api.addReference(projectId, { ...form, attachments })
       setForm(blankForm())
       reset()
       load()
+      setJustPublished(true)
+      setTimeout(() => setJustPublished(false), 3500)
     } finally {
       setSaving(false)
     }
@@ -75,7 +79,7 @@ export default function AdminReferencesPage() {
         </select>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 20, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 20, alignItems: 'start' }}>
         {/* ---- Upload form ---- */}
         <div style={{ ...card, padding: 20 }}>
           <h2 style={{ margin: '0 0 16px', fontSize: 18, color: C.navy }}>＋ Add a reference</h2>
@@ -160,10 +164,15 @@ export default function AdminReferencesPage() {
               />
             </div>
 
-            <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <button style={{ ...button('primary'), opacity: saving || !form.title.trim() ? 0.6 : 1 }} onClick={submit} disabled={saving}>
                 {saving ? 'Publishing…' : 'Publish to community'}
               </button>
+              {justPublished && (
+                <span className="pg-fade-in" style={{ ...badge(C.success, C.successBg), padding: '7px 13px' }}>
+                  ✓ Published
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -172,8 +181,13 @@ export default function AdminReferencesPage() {
         <div>
           <h2 style={{ margin: '4px 0 16px', fontSize: 18, color: C.navy }}>
             Published{selectedProject ? ` — ${selectedProject.name}` : ''}
+            {refs?.length > 0 && <span style={{ color: C.textFaint, fontWeight: 400 }}> ({refs.length})</span>}
           </h2>
-          {refs.length === 0 ? (
+          {refs === null ? (
+            <div style={{ display: 'grid', gap: 12 }}>
+              {[0, 1].map(i => <div key={i} className="pg-skel" style={{ height: 72, borderRadius: C.radius }} />)}
+            </div>
+          ) : refs.length === 0 ? (
             <div style={{ ...card, padding: 22, textAlign: 'center', color: C.textMuted }}>
               Nothing published yet for this community.
             </div>

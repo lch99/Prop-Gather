@@ -30,8 +30,8 @@ export default function DefectsPanel({ projectId, project }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+        <div style={{ flex: '1 1 220px' }}>
           <h3 style={{ margin: 0, color: C.navy }}>Defect Tracker</h3>
           <p style={{ margin: '4px 0 0', color: C.textMuted, fontSize: 13 }}>
             Logged defects automatically surface how many other units reported the same issue —
@@ -42,7 +42,7 @@ export default function DefectsPanel({ projectId, project }) {
       </div>
 
       {showNew && (
-        <div style={{ ...card, padding: 16, marginBottom: 16, display: 'grid', gap: 10, gridTemplateColumns: '1fr 1fr', }}>
+        <div style={{ ...card, padding: 16, marginBottom: 16, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
           <input placeholder="Defect title" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
             style={{ ...inputStyle, gridColumn: '1 / -1' }} />
           <select value={form.block} onChange={e => setForm(f => ({ ...f, block: e.target.value }))} style={inputStyle}>

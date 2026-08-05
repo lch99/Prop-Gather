@@ -4,6 +4,8 @@ import { api } from '../api'
 import { useAuth } from '../auth'
 import { C, card, badge, button } from '../theme'
 import ForumTab from './project/ForumTab'
+import ChatTab from './project/ChatTab'
+import ToolsTab from './project/ToolsTab'
 import ReferencesTab from './project/ReferencesTab'
 
 const comingSoonTabs = ['Subscription*', 'Vendors']
@@ -112,6 +114,13 @@ export default function ProjectPage() {
 
   const isVerified = myComms === 'admin' || (Array.isArray(myComms) && myComms.some(c => c.projectId === id))
 
+  const gatedTab = (tab) =>
+    myComms === null
+      ? <div style={{ padding: 40, textAlign: 'center', color: C.textMuted }}>Loading...</div>
+      : isVerified
+        ? tab
+        : <LockedGate projectId={id} projectName={project.name} isLoggedIn={!!user} />
+
   const glassBadge = {
     display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 700,
     color: '#fff', background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.30)',
@@ -147,35 +156,29 @@ export default function ProjectPage() {
 
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 24px 28px' }}>
         <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${C.border}`, marginBottom: 20, flexWrap: 'wrap' }}>
-          <NavLink
-            to={`/project/${id}/`}
-            end
-            style={({ isActive }) => ({
-              padding: '10px 18px',
-              fontWeight: 600,
-              fontSize: 14,
-              color: isActive ? C.blue : C.textMuted,
-              borderBottom: isActive ? `2px solid ${C.blue}` : '2px solid transparent',
-              marginBottom: -1,
-              display: 'flex', alignItems: 'center', gap: 5
-            })}
-          >
-            Forum {!isVerified && <span style={{ fontSize: 12 }}>🔐</span>}
-          </NavLink>
-
-          <NavLink
-            to={`/project/${id}/references`}
-            style={({ isActive }) => ({
-              padding: '10px 18px',
-              fontWeight: 600,
-              fontSize: 14,
-              color: isActive ? C.blue : C.textMuted,
-              borderBottom: isActive ? `2px solid ${C.blue}` : '2px solid transparent',
-              marginBottom: -1
-            })}
-          >
-            References
-          </NavLink>
+          {[
+            { to: `/project/${id}/`, end: true, label: 'Forum', gated: true },
+            { to: `/project/${id}/chat`, label: 'Chat', gated: true },
+            { to: `/project/${id}/tools`, label: 'Tools', gated: true },
+            { to: `/project/${id}/references`, label: 'References', gated: false }
+          ].map(t => (
+            <NavLink
+              key={t.to}
+              to={t.to}
+              end={t.end}
+              style={({ isActive }) => ({
+                padding: '10px 18px',
+                fontWeight: 600,
+                fontSize: 14,
+                color: isActive ? C.blue : C.textMuted,
+                borderBottom: isActive ? `2px solid ${C.blue}` : '2px solid transparent',
+                marginBottom: -1,
+                display: 'flex', alignItems: 'center', gap: 5
+              })}
+            >
+              {t.label} {t.gated && !isVerified && <span style={{ fontSize: 12 }}>🔐</span>}
+            </NavLink>
+          ))}
 
           {comingSoonTabs.map(label => (
             <button
@@ -202,16 +205,9 @@ export default function ProjectPage() {
         </div>
 
         <Routes>
-          <Route
-            path=""
-            element={
-              myComms === null
-                ? <div style={{ padding: 40, textAlign: 'center', color: C.textMuted }}>Loading...</div>
-                : isVerified
-                  ? <ForumTab projectId={id} />
-                  : <LockedGate projectId={id} projectName={project.name} isLoggedIn={!!user} />
-            }
-          />
+          <Route path="" element={gatedTab(<ForumTab projectId={id} />)} />
+          <Route path="chat" element={gatedTab(<ChatTab projectId={id} />)} />
+          <Route path="tools" element={gatedTab(<ToolsTab projectId={id} project={project} />)} />
           <Route path="references" element={<ReferencesTab projectId={id} />} />
         </Routes>
       </div>

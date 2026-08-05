@@ -25,8 +25,8 @@ export default function PetitionsPanel({ projectId }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+        <div style={{ flex: '1 1 220px' }}>
           <h3 style={{ margin: 0, color: C.navy }}>Petitions</h3>
           <p style={{ margin: '4px 0 0', color: C.textMuted, fontSize: 13 }}>
             Create or sign a petition. Completed petitions can be exported as a signed PDF for the developer, JMB, or KPKT.

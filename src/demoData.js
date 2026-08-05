@@ -37,6 +37,66 @@ export const projects = [
     state: 'Selangor', city: 'Rawang', address: 'Jalan Eco Greenview 2',
     ownerCount: 121, activityLevel: 'Medium', units: 150, blocks: [], floorsPerBlock: 0,
     latestThread: 'Heads up: road resurfacing Phase 2 from 20 June'
+  },
+  {
+    id: 'p7', name: 'Kiara Heights Residence', type: 'Condo',
+    state: 'Wilayah Persekutuan', city: 'Kuala Lumpur', address: 'Jalan Kiara 3, Mont Kiara',
+    ownerCount: 356, activityLevel: 'High', units: 520, blocks: ['A', 'B'], floorsPerBlock: 38,
+    latestThread: 'Reminder: expat tenants must register with the management office'
+  },
+  {
+    id: 'p8', name: 'Bandar Cheras Court', type: 'Apartment',
+    state: 'Wilayah Persekutuan', city: 'Kuala Lumpur', address: 'Jalan Cheras Perdana 3, Bandar Cheras',
+    ownerCount: 174, activityLevel: 'Medium', units: 288, blocks: ['1', '2', '3'], floorsPerBlock: 18,
+    latestThread: 'Parking bay re-numbering starts next month — check the notice board'
+  },
+  {
+    id: 'p9', name: 'Sri Setapak Suites', type: 'Condo',
+    state: 'Wilayah Persekutuan', city: 'Kuala Lumpur', address: 'Jalan Genting Klang, Setapak',
+    ownerCount: 245, activityLevel: 'High', units: 360, blocks: ['Menara 1', 'Menara 2'], floorsPerBlock: 32,
+    latestThread: 'Flash flood warning — basement parking sandbags being distributed'
+  },
+  {
+    id: 'p10', name: 'Kepong Garden Villas', type: 'Landed G&G',
+    state: 'Wilayah Persekutuan', city: 'Kuala Lumpur', address: 'Jalan Kepong Baru 7',
+    ownerCount: 96, activityLevel: 'Low', units: 130, blocks: [], floorsPerBlock: 0,
+    latestThread: 'Proposal: upgrade guardhouse boom gate to auto-recognition'
+  },
+  {
+    id: 'p11', name: 'Wangsa Maju Parkview', type: 'Apartment',
+    state: 'Wilayah Persekutuan', city: 'Kuala Lumpur', address: 'Jalan Wangsa Delima 3, Wangsa Maju',
+    ownerCount: 208, activityLevel: 'Medium', units: 340, blocks: ['A', 'B'], floorsPerBlock: 22,
+    latestThread: 'LRT feeder bus schedule changed — updated timetable posted'
+  },
+  {
+    id: 'p12', name: 'Subang Jaya Sky Residence', type: 'Condo',
+    state: 'Selangor', city: 'Subang Jaya', address: 'Jalan SS15/8D, Subang Jaya',
+    ownerCount: 298, activityLevel: 'High', units: 450, blocks: ['North', 'South'], floorsPerBlock: 34,
+    latestThread: 'Sky lounge booking system is live — first come first served'
+  },
+  {
+    id: 'p13', name: 'Puchong Prima Homes', type: 'Landed G&G',
+    state: 'Selangor', city: 'Puchong', address: 'Jalan Puchong Prima 5',
+    ownerCount: 167, activityLevel: 'Medium', units: 220, blocks: [], floorsPerBlock: 0,
+    latestThread: 'Petition: install speed bumps along Jalan Puchong Prima 5'
+  },
+  {
+    id: 'p14', name: 'Klang Riverside Apartments', type: 'Apartment',
+    state: 'Selangor', city: 'Klang', address: 'Jalan Kasawari, Bandar Botanic, Klang',
+    ownerCount: 142, activityLevel: 'Low', units: 240, blocks: ['1', '2'], floorsPerBlock: 16,
+    latestThread: 'River water level rising — sandbags available at guardhouse'
+  },
+  {
+    id: 'p15', name: 'Cyberjaya Tech Residency', type: 'Condo',
+    state: 'Selangor', city: 'Cyberjaya', address: 'Persiaran Multimedia, Cyberjaya',
+    ownerCount: 231, activityLevel: 'High', units: 380, blocks: ['A', 'B', 'C'], floorsPerBlock: 28,
+    latestThread: 'Co-working lounge Wi-Fi upgrade completed — speeds much improved'
+  },
+  {
+    id: 'p16', name: 'Kajang Impian Heights', type: 'Apartment',
+    state: 'Selangor', city: 'Kajang', address: 'Jalan Impian Meridian, Bandar Baru Bangi',
+    ownerCount: 118, activityLevel: 'Medium', units: 200, blocks: ['1', '2'], floorsPerBlock: 20,
+    latestThread: 'MRT feeder bus stop relocated closer to main entrance'
   }
 ]
 
@@ -74,7 +134,17 @@ export const chatChannels = {
   p3: ['general', 'defects', 'announcements', 'facilities', 'renovation'],
   p4: ['general', 'defects', 'announcements', 'facilities', 'renovation'],
   p5: ['general', 'defects', 'announcements', 'facilities', 'renovation'],
-  p6: ['general', 'defects', 'announcements', 'facilities', 'renovation']
+  p6: ['general', 'defects', 'announcements', 'facilities', 'renovation'],
+  p7: ['general', 'defects', 'announcements', 'facilities', 'renovation'],
+  p8: ['general', 'defects', 'announcements', 'facilities', 'renovation'],
+  p9: ['general', 'defects', 'announcements', 'facilities', 'renovation'],
+  p10: ['general', 'defects', 'announcements', 'facilities', 'renovation'],
+  p11: ['general', 'defects', 'announcements', 'facilities', 'renovation'],
+  p12: ['general', 'defects', 'announcements', 'facilities', 'renovation'],
+  p13: ['general', 'defects', 'announcements', 'facilities', 'renovation'],
+  p14: ['general', 'defects', 'announcements', 'facilities', 'renovation'],
+  p15: ['general', 'defects', 'announcements', 'facilities', 'renovation'],
+  p16: ['general', 'defects', 'announcements', 'facilities', 'renovation']
 }
 
 export const chatMessages = {

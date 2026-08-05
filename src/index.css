@@ -198,6 +198,48 @@ input:focus, textarea:focus, select:focus {
   }
 }
 
+/* chat layout: channel chips above the conversation panel on phones,
+   a fixed-width sidebar rail (like pg-forum-grid) from tablet up */
+.pg-chat-grid {
+  grid-template-columns: 1fr;
+}
+
+.pg-chat-panel {
+  height: 460px;
+}
+
+@media (min-width: 768px) {
+  .pg-chat-grid {
+    grid-template-columns: 220px 1fr;
+    height: 560px;
+  }
+
+  .pg-chat-panel {
+    height: auto;
+  }
+}
+
+@media (max-width: 767px) {
+  .pg-chat-channels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .pg-chat-channels > div:first-child,
+  .pg-chat-channels > div:last-child {
+    width: 100%;
+  }
+
+  .pg-chat-channels button {
+    width: auto !important;
+    display: inline-flex !important;
+    margin-bottom: 0 !important;
+    border: 1px solid #DCE6F0 !important;
+  }
+}
+
 /* floating "Contact Us" button — full pill on desktop, compact icon-only circle on phones
    so it never covers form buttons or links on small screens */
 .pg-fab {
