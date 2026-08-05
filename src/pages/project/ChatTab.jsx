@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
 import { C, card, button, badge, tierColor } from '../../theme'
+import { useAuth } from '../../auth'
 import { useAttachments, AttachmentPicker, AttachmentList } from '../../components/Attachments'
 
 const channelIcons = {
@@ -12,6 +13,7 @@ const channelIcons = {
 }
 
 export default function ChatTab({ projectId }) {
+  const { user } = useAuth()
   const [channels, setChannels] = useState([])
   const [active, setActive] = useState('general')
   const [messages, setMessages] = useState([])
@@ -43,11 +45,19 @@ export default function ChatTab({ projectId }) {
     resetAttachments()
   }
 
+  // You can remove your own message — mirrors the forum "delete your post"
+  // right (see ForumTab.jsx).
+  const deleteMessage = async (messageId) => {
+    if (!window.confirm('Delete this message? This cannot be undone.')) return
+    await api.deleteChatMessage(projectId, active, messageId)
+    setMessages(m => m.filter(msg => msg.id !== messageId))
+  }
+
   // Residents-only platform — every verified resident can post in every channel.
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 20, height: 560 }}>
-      <div style={{ ...card, padding: 12, overflowY: 'auto' }}>
+    <div className="pg-chat-grid" style={{ display: 'grid', gap: 20 }}>
+      <div className="pg-chat-channels" style={{ ...card, padding: 12, overflowY: 'auto' }}>
         <div style={{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>CHANNELS</div>
         {channels.map(ch => (
           <button
@@ -70,7 +80,7 @@ export default function ChatTab({ projectId }) {
         </div>
       </div>
 
-      <div style={{ ...card, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="pg-chat-panel" style={{ ...card, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontWeight: 700, color: C.navy }}>{channelIcons[active] || `# ${active}`}</div>
           <span style={badge(C.success, C.successBg)}>● 12 online</span>
@@ -87,6 +97,15 @@ export default function ChatTab({ projectId }) {
                 <span style={{ ...badge(tierColor(m.tier), `${tierColor(m.tier)}1a`), fontSize: 11 }}>{m.tier}</span>
                 {m.verified && <span style={{ fontSize: 11, color: C.success }}>✓</span>}
                 <span style={{ fontSize: 11, color: C.textFaint, marginLeft: 'auto' }}>{m.time}</span>
+                {m.sender === user?.name && (
+                  <button
+                    onClick={() => deleteMessage(m.id)}
+                    title="Delete your message"
+                    style={{ border: 'none', background: 'none', color: C.danger, fontSize: 12, cursor: 'pointer', padding: 0 }}
+                  >
+                    🗑️
+                  </button>
+                )}
               </div>
               {m.text && (
                 <div style={{ fontSize: 14, color: C.text, background: '#f6f7f9', padding: '8px 12px', borderRadius: C.radiusSm, display: 'inline-block', maxWidth: '85%' }}>

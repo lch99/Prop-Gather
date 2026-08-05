@@ -26,6 +26,7 @@ export default function App() {
         <Route path="/admin" element={<RequireAuth role="admin"><AdminPage /></RequireAuth>} />
         <Route path="/admin/verification" element={<RequireAuth role="admin"><AdminPage /></RequireAuth>} />
         <Route path="/admin/references" element={<RequireAuth role="admin"><AdminPage /></RequireAuth>} />
+        <Route path="/admin/activity" element={<RequireAuth role="admin"><AdminPage /></RequireAuth>} />
         <Route path="/project/:id/*" element={<ProjectPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/contact" element={<ContactPage />} />

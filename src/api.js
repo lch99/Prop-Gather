@@ -20,6 +20,26 @@ const store = {
   references:    clone(seed.references),
   feeTracker:    clone(seed.feeTracker),
   verificationQueue: [],
+  // Communities granted via an approved application, keyed by projectId — merged
+  // into getMe() so "Simulate admin approval" actually unlocks that project.
+  approvedMemberships: [],
+  // Mirrors the backend's audit_log table at demo scale — who did what to which
+  // application, and when. See src/pages/AdminActivityLogPage.jsx.
+  auditLog: [],
+}
+
+function logAudit({ actorName, actorRole, action, targetId, projectId, metadata = {} }) {
+  store.auditLog.unshift({
+    id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    actorName,
+    actorRole,
+    action,
+    targetType: 'application',
+    targetId,
+    projectId,
+    metadata,
+    createdAt: new Date().toISOString()
+  })
 }
 
 // Helper to add a small async delay so UI loading states are visible
@@ -63,27 +83,91 @@ export const api = {
 
   getMe: async () => {
     await delay(60)
-    return clone(seed.demoUser)
+    const extra = store.approvedMemberships
+      .filter(m => !seed.demoUser.communities.some(c => c.projectId === m.projectId))
+      .map(m => {
+        const project = store.projects.find(p => p.id === m.projectId)
+        return {
+          projectId: m.projectId,
+          tier: m.tier,
+          unit: m.unit,
+          verifiedAt: m.verifiedAt,
+          project: project ? { name: project.name, city: project.city, state: project.state } : null
+        }
+      })
+    return clone({ ...seed.demoUser, communities: [...seed.demoUser.communities, ...extra] })
   },
 
   // ── Registration / verification ───────────────────────────────────────────
+  // consentTimestamp (Date) comes from the checkbox in RegisterPage — persisting
+  // it here (rather than only in component state) mirrors the backend's
+  // consent_accepted_at column.
   register: async (data) => {
     await delay()
-    const app = { ...data, id: `app-${Date.now()}`, status: 'Pending', submittedAt: new Date().toISOString() }
+    const { consentTimestamp, ...rest } = data
+    const app = {
+      ...rest,
+      id: `app-${Date.now()}`,
+      status: 'Pending',
+      submittedAt: new Date().toISOString(),
+      consentAcceptedAt: consentTimestamp ? new Date(consentTimestamp).toISOString() : new Date().toISOString()
+    }
     store.verificationQueue.push(app)
+    logAudit({
+      actorName: app.name,
+      actorRole: 'resident',
+      action: 'application.submitted',
+      targetId: app.id,
+      projectId: app.projectId,
+      metadata: { tier: app.tier, unit: app.unit }
+    })
     return clone(app)
   },
 
-  getVerificationQueue: async () => {
+  // role is the acting user's role (from useAuth()) — mirrors the backend's
+  // requireRole('admin') gate, since this mock has no server boundary of its own.
+  getVerificationQueue: async (role) => {
     await delay()
+    if (role !== 'admin') return []
     return clone(store.verificationQueue)
   },
 
-  decideVerification: async (id, decision) => {
+  // actor is the deciding admin ({id, name}) from useAuth() — recorded on the
+  // application and in the audit log, mirroring the backend's decided_by column.
+  decideVerification: async (id, decision, actor) => {
     await delay()
     const app = store.verificationQueue.find(a => a.id === id)
-    if (app) app.status = decision
+    if (app) {
+      app.status = decision === 'approve' ? 'Approved' : 'Rejected'
+      app.decidedAt = new Date().toISOString()
+      app.decidedBy = actor?.id || null
+      app.decidedByName = actor?.name || null
+      if (app.status === 'Approved') {
+        const verifiedAt = new Date().toISOString().slice(0, 10)
+        const existing = store.approvedMemberships.find(m => m.projectId === app.projectId)
+        if (existing) {
+          Object.assign(existing, { tier: app.tier, unit: app.unit, verifiedAt })
+        } else {
+          store.approvedMemberships.push({ projectId: app.projectId, tier: app.tier, unit: app.unit, verifiedAt })
+        }
+      }
+      logAudit({
+        actorName: actor?.name || 'Unknown admin',
+        actorRole: 'admin',
+        action: app.status === 'Approved' ? 'application.approved' : 'application.rejected',
+        targetId: app.id,
+        projectId: app.projectId,
+        metadata: { tier: app.tier, unit: app.unit }
+      })
+    }
     return clone(app)
+  },
+
+  // Admin-only, mirrors GET /api/audit-log — newest first.
+  getAuditLog: async (role) => {
+    await delay()
+    if (role !== 'admin') return []
+    return clone(store.auditLog)
   },
 
   // ── Forum ─────────────────────────────────────────────────────────────────
@@ -130,6 +214,17 @@ export const api = {
     return clone(thread)
   },
 
+  // Lets a resident remove their own post — mirrors the backend's
+  // DELETE /api/projects/:projectId/forum/:threadId (PDPA right to have
+  // personal data / contributed content removed, not just verification docs).
+  deleteThread: async (projectId, threadId) => {
+    await delay(60)
+    if (store.forumThreads[projectId]) {
+      store.forumThreads[projectId] = store.forumThreads[projectId].filter(t => t.id !== threadId)
+    }
+    return { ok: true }
+  },
+
   // ── Chat ──────────────────────────────────────────────────────────────────
   getChatChannels: async (projectId) => {
     await delay()
@@ -153,6 +248,17 @@ export const api = {
     if (!store.chatMessages[projectId][channel]) store.chatMessages[projectId][channel] = []
     store.chatMessages[projectId][channel].push(msg)
     return clone(msg)
+  },
+
+  // Lets a resident remove their own message — mirrors the backend's
+  // DELETE /api/projects/:projectId/chat/:channel/messages/:messageId.
+  deleteChatMessage: async (projectId, channel, messageId) => {
+    await delay(60)
+    const channelMessages = store.chatMessages[projectId]?.[channel]
+    if (channelMessages) {
+      store.chatMessages[projectId][channel] = channelMessages.filter(m => m.id !== messageId)
+    }
+    return { ok: true }
   },
 
   // ── Vendors ───────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
 import { C, card, button, badge } from '../../theme'
+import { useAuth } from '../../auth'
 import { AuthorLine } from '../../components/Badges'
 import { useAttachments, AttachmentPicker, AttachmentList } from '../../components/Attachments'
 import PollView from '../../components/PollView'
@@ -19,6 +20,7 @@ function timeAgo(dateStr) {
 }
 
 export default function ForumTab({ projectId }) {
+  const { user } = useAuth()
   const [threads, setThreads] = useState([])
   const [category, setCategory] = useState('All')
   const [showNew, setShowNew] = useState(false)
@@ -40,6 +42,14 @@ export default function ForumTab({ projectId }) {
   const voteThreadPoll = async (threadId, optionId) => {
     const updated = await api.voteThreadPoll(projectId, threadId, optionId)
     setThreads(ts => ts.map(t => t.id === updated.id ? updated : t))
+  }
+
+  // You can remove your own post — this is the PDPA right to have content
+  // you contributed deleted, not just your verification document.
+  const deleteThread = async (threadId) => {
+    if (!window.confirm('Delete this post? This cannot be undone.')) return
+    await api.deleteThread(projectId, threadId)
+    setThreads(ts => ts.filter(t => t.id !== threadId))
   }
 
   // --- poll builder helpers (form) ---
@@ -91,7 +101,7 @@ export default function ForumTab({ projectId }) {
       </div>
 
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
           <div style={{ color: C.textMuted, fontSize: 14 }}>{filtered.length} thread{filtered.length !== 1 ? 's' : ''}</div>
           <button style={button('primary')} onClick={() => setShowNew(s => !s)}>+ New thread</button>
         </div>
@@ -206,11 +216,20 @@ export default function ForumTab({ projectId }) {
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                 <AuthorLine author={t.author} />
-                <div style={{ display: 'flex', gap: 14, fontSize: 13, color: C.textMuted }}>
+                <div style={{ display: 'flex', gap: 14, alignItems: 'center', fontSize: 13, color: C.textMuted }}>
                   <button onClick={() => upvote(t.id)} style={{ border: 'none', background: 'none', color: C.textMuted, fontSize: 13 }}>
                     ▲ {t.upvotes}
                   </button>
                   <span>💬 {t.replies}</span>
+                  {t.author?.name === user?.name && (
+                    <button
+                      onClick={() => deleteThread(t.id)}
+                      title="Delete your post"
+                      style={{ border: 'none', background: 'none', color: C.danger, fontSize: 13, cursor: 'pointer', padding: 0 }}
+                    >
+                      🗑️
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

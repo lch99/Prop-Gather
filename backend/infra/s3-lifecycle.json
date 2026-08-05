@@ -1,0 +1,10 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-verification-docs-after-14-days",
+      "Filter": { "Prefix": "verification-docs/" },
+      "Status": "Enabled",
+      "Expiration": { "Days": 14 }
+    }
+  ]
+}

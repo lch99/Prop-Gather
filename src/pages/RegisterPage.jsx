@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { C, card, button, badge } from '../theme'
+import { useAttachments, AttachmentPicker, AttachmentList } from '../components/Attachments'
 
 const steps = ['Register', 'Upload proof', 'Admin review', 'Access granted']
 
@@ -22,7 +23,7 @@ export default function RegisterPage() {
   const [tncAccepted, setTncAccepted] = useState(false)
   const [tncChecked, setTncChecked] = useState(false)
   const [docConsentChecked, setDocConsentChecked] = useState(false)
-  const [consentTimestamp, setConsentTimestamp] = useState(null)
+  const { attachments, addFiles, removeAttachment, error: uploadError, reset: resetAttachments } = useAttachments(1)
 
   useEffect(() => { api.getProjects().then(setProjects) }, [])
 
@@ -39,10 +40,18 @@ export default function RegisterPage() {
 
   const submitDocument = async () => {
     setError('')
+    if (attachments.length === 0) {
+      setError('Please upload your proof document to continue.')
+      return
+    }
     try {
-      const app = await api.register({ ...form, document: `${docByTier[form.tier]}.pdf` })
+      const app = await api.register({
+        ...form,
+        document: attachments[0].name,
+        documentFile: attachments[0],
+        consentTimestamp: new Date()
+      })
       setApplication(app)
-      setConsentTimestamp(new Date())
       setStep(2)
     } catch (e) {
       setError(e.message)
@@ -51,14 +60,17 @@ export default function RegisterPage() {
 
   const withdrawApplication = () => {
     setApplication(null)
-    setConsentTimestamp(null)
     setDocConsentChecked(false)
+    resetAttachments()
     setStep(1)
   }
 
   const simulateApproval = async () => {
     if (!application) return
-    await api.decideVerification(application.id, 'approve')
+    // Demo shortcut for the "Simulate admin approval" button — stands in for a
+    // real admin's decision in the Admin Queue tab, so it's attributed to the
+    // same fixed demo admin account (see DEMO_ACCOUNTS in auth.jsx).
+    await api.decideVerification(application.id, 'approve', { id: 'admin', name: 'Platform Admin' })
     setStep(3)
   }
 
@@ -79,7 +91,7 @@ export default function RegisterPage() {
             <p><strong>1. Accurate information.</strong> You confirm that all details and documents submitted are true, accurate, and belong to you.</p>
             <p><strong>2. Verification process.</strong> Your application, including any uploaded documents, will be reviewed by a Platform Admin. False or fraudulent submissions may result in rejection or permanent suspension.</p>
             <p><strong>3. Community conduct.</strong> Once verified, you agree to engage respectfully with other residents and to use shared community channels for legitimate property-related discussion only.</p>
-            <p><strong>4. Data usage & document retention.</strong> Your personal information will be used solely to verify your connection to the property and to operate your community account. Any proof document you upload (e.g. SPA, utility bill, property title, Tenancy Agreement) will be used for verification purposes only and will <strong>not be stored permanently</strong>. Documents are deleted from our systems within 14 days of your application being reviewed, whether approved or rejected. We do not share your documents with third parties.</p>
+            <p><strong>4. Data usage & document retention.</strong> Your personal information will be used solely to verify your connection to the property and to operate your community account. Any proof document you upload (e.g. SPA, utility bill, property title, Tenancy Agreement) will be used for verification purposes only and will <strong>not be stored permanently</strong>. Documents are deleted from our systems within 14 days of your application being reviewed, whether approved or rejected. We do not share your documents with third parties, other than the cloud storage provider we use to hold them securely — which may store data outside Malaysia. By submitting a document you consent to that transfer, which is necessary to provide the verification service.</p>
             <p><strong>5. Account integrity.</strong> Sharing your verified access with non-residents or misrepresenting your tier (Owner / House Owner) is prohibited and may lead to access being revoked.</p>
           </div>
 
@@ -164,13 +176,14 @@ export default function RegisterPage() {
             <p style={{ color: C.textMuted, margin: 0 }}>
               Required document for <strong>{form.tier}</strong>: {docByTier[form.tier]}
             </p>
-            <div style={{
-              border: `2px dashed ${C.border}`, borderRadius: C.radius, padding: 32,
-              textAlign: 'center', color: C.textMuted
-            }}>
-              📄 Drag & drop file here, or click to browse<br />
-              <span style={{ fontSize: 12 }}>(demo — no real file is uploaded)</span>
-            </div>
+            <AttachmentPicker
+              attachments={attachments}
+              addFiles={addFiles}
+              removeAttachment={removeAttachment}
+              error={uploadError}
+              label={`Upload your ${docByTier[form.tier]}`}
+              max={1}
+            />
 
             <div style={{
               background: '#fffbeb', border: `1px solid #f59e0b`, borderRadius: C.radiusSm,
@@ -181,6 +194,8 @@ export default function RegisterPage() {
               it will be deleted within <strong>14 days</strong> of your application being reviewed.
               Only the assigned platform admin can access your document during this period.
               We do not share, sell, or retain your document beyond what is necessary to verify your residency.
+              It is held in encrypted cloud storage that may be located outside Malaysia — see our{' '}
+              <Link to="/privacy" style={{ color: '#92400e', fontWeight: 700 }} target="_blank">Privacy Policy</Link>.
             </div>
 
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, color: C.text, cursor: 'pointer' }}>
@@ -191,13 +206,18 @@ export default function RegisterPage() {
                 style={{ marginTop: 2, flexShrink: 0 }}
               />
               I consent to my uploaded document being reviewed by a platform admin solely for residency
-              verification, and I understand it will be permanently deleted within 14 days of review.
+              verification, being stored on our cloud storage provider's servers (which may be located
+              outside Malaysia), and I understand it will be permanently deleted within 14 days of review.
             </label>
 
             {error && <div style={{ color: C.danger, fontSize: 13 }}>{error}</div>}
             <button
-              style={{ ...button('primary'), opacity: docConsentChecked ? 1 : 0.5, cursor: docConsentChecked ? 'pointer' : 'not-allowed' }}
-              disabled={!docConsentChecked}
+              style={{
+                ...button('primary'),
+                opacity: docConsentChecked && attachments.length > 0 ? 1 : 0.5,
+                cursor: docConsentChecked && attachments.length > 0 ? 'pointer' : 'not-allowed'
+              }}
+              disabled={!docConsentChecked || attachments.length === 0}
               onClick={submitDocument}
             >
               Submit for review
@@ -217,6 +237,9 @@ export default function RegisterPage() {
                 Unit {application?.unit} · {projects.find(p => p.id === application?.projectId)?.name}
               </div>
               <div style={{ fontSize: 13, color: C.textMuted }}>Document: {application?.document}</div>
+              {application?.documentFile && (
+                <AttachmentList attachments={[application.documentFile]} thumb={72} style={{ marginTop: 8 }} />
+              )}
               <div style={{ marginTop: 6 }}>{badgeFor('Pending')}</div>
             </div>
 
@@ -225,9 +248,9 @@ export default function RegisterPage() {
               padding: '12px 14px', fontSize: 12.5, color: '#92400e', lineHeight: 1.6
             }}>
               🔒 <strong>Your document is held for review only.</strong> It will be permanently deleted within 14 days of a decision being made.
-              {consentTimestamp && (
+              {application?.consentAcceptedAt && (
                 <div style={{ marginTop: 6, color: '#78350f' }}>
-                  Consent recorded: {consentTimestamp.toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}
+                  Consent recorded: {new Date(application.consentAcceptedAt).toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' })}
                 </div>
               )}
             </div>

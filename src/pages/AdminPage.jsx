@@ -1,16 +1,33 @@
+import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { api } from '../api'
 import { C } from '../theme'
+import { useAuth } from '../auth'
 import AdminVerificationPage from './AdminVerificationPage'
 import AdminReferencesPage from './AdminReferencesPage'
-
-const tabs = [
-  { key: 'verification', label: 'Verification Queue', icon: '🛡️', path: '/admin/verification' },
-  { key: 'references', label: 'Community References', icon: '📂', path: '/admin/references' }
-]
+import AdminActivityLogPage from './AdminActivityLogPage'
 
 export default function AdminPage() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const [queue, setQueue] = useState(null)
+  const [projects, setProjects] = useState({})
+
+  const reload = useCallback(() => { api.getVerificationQueue(user?.role).then(setQueue) }, [user?.role])
+
+  useEffect(() => {
+    reload()
+    api.getProjects().then(list => setProjects(Object.fromEntries(list.map(p => [p.id, p]))))
+  }, [reload])
+
+  const pendingCount = queue?.filter(a => a.status === 'Pending').length || 0
+
+  const tabs = [
+    { key: 'verification', label: 'Verification Queue', icon: '🛡️', path: '/admin/verification', count: pendingCount },
+    { key: 'references', label: 'Community References', icon: '📂', path: '/admin/references' },
+    { key: 'activity', label: 'Activity Log', icon: '📋', path: '/admin/activity' }
+  ]
   const active = tabs.find(t => location.pathname.startsWith(t.path))?.key || 'verification'
 
   const select = (tab) => navigate(tab.path, { replace: true })
@@ -31,6 +48,7 @@ export default function AdminPage() {
                   key={t.key}
                   onClick={() => select(t)}
                   style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 7,
                     padding: '11px 20px', border: 'none', cursor: 'pointer',
                     fontSize: 14.5, fontWeight: 700,
                     background: on ? C.bg : 'transparent',
@@ -40,6 +58,14 @@ export default function AdminPage() {
                   }}
                 >
                   {t.icon} {t.label}
+                  {!!t.count && (
+                    <span style={{
+                      background: on ? C.accent : 'rgba(255,255,255,0.32)', color: '#fff',
+                      borderRadius: 999, fontSize: 11, fontWeight: 800, padding: '1px 7px', lineHeight: 1.6
+                    }}>
+                      {t.count}
+                    </span>
+                  )}
                 </button>
               )
             })}
@@ -47,8 +73,9 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {active === 'verification' && <AdminVerificationPage />}
+      {active === 'verification' && <AdminVerificationPage queue={queue} projects={projects} reload={reload} actor={user} />}
       {active === 'references' && <AdminReferencesPage />}
+      {active === 'activity' && <AdminActivityLogPage />}
     </div>
   )
 }
