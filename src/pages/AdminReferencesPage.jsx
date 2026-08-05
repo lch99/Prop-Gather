@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { C, card, button, badge } from '../theme'
 import { useAttachments, AttachmentPicker } from '../components/Attachments'
 import { REFERENCE_TYPES, refMeta, PROGRESS_TYPE } from '../referenceTypes'
 
 const today = () => new Date().toISOString().slice(0, 10)
-const blankForm = () => ({ type: 'Project Reference', title: '', description: '', date: today(), progress: '' })
+const blankForm = (type = 'Project Reference') => ({ type, title: '', description: '', date: today(), progress: '' })
 
 const inputStyle = {
   padding: '11px 12px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm,
@@ -14,6 +15,7 @@ const inputStyle = {
 const labelStyle = { fontSize: 13.5, fontWeight: 700, color: C.navy, marginBottom: 6, display: 'block' }
 
 export default function AdminReferencesPage() {
+  const [searchParams] = useSearchParams()
   const [projects, setProjects] = useState([])
   const [projectId, setProjectId] = useState('')
   const [refs, setRefs] = useState(null)
@@ -28,6 +30,17 @@ export default function AdminReferencesPage() {
       if (list.length) setProjectId(list[0].id)
     })
   }, [])
+
+  // Deep-linked from the Overview dashboard (?projectId=&type=) — e.g. its
+  // "Add progress update" quick action. Re-runs on every navigation here so
+  // switching communities from Overview updates the form without a remount.
+  useEffect(() => {
+    if (!projects.length) return
+    const paramId = searchParams.get('projectId')
+    const paramType = searchParams.get('type')
+    if (paramId && projects.some(p => p.id === paramId)) setProjectId(paramId)
+    if (paramType && REFERENCE_TYPES.some(t => t.key === paramType)) setForm(blankForm(paramType))
+  }, [searchParams, projects])
 
   const load = () => { if (projectId) api.getReferences(projectId).then(setRefs) }
   useEffect(() => { setRefs(null); load() }, [projectId])

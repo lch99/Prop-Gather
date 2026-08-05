@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { C } from '../theme'
 import { useAuth } from '../auth'
+import AdminOverviewPage from './AdminOverviewPage'
 import AdminVerificationPage from './AdminVerificationPage'
 import AdminReferencesPage from './AdminReferencesPage'
 import AdminActivityLogPage from './AdminActivityLogPage'
@@ -24,11 +25,12 @@ export default function AdminPage() {
   const pendingCount = queue?.filter(a => a.status === 'Pending').length || 0
 
   const tabs = [
+    { key: 'overview', label: 'Overview', icon: '📊', path: '/admin/overview' },
     { key: 'verification', label: 'Verification Queue', icon: '🛡️', path: '/admin/verification', count: pendingCount },
     { key: 'references', label: 'Community References', icon: '📂', path: '/admin/references' },
     { key: 'activity', label: 'Activity Log', icon: '📋', path: '/admin/activity' }
   ]
-  const active = tabs.find(t => location.pathname.startsWith(t.path))?.key || 'verification'
+  const active = tabs.find(t => location.pathname.startsWith(t.path))?.key || 'overview'
 
   const select = (tab) => navigate(tab.path, { replace: true })
 
@@ -38,7 +40,7 @@ export default function AdminPage() {
         <div style={{ maxWidth: 980, margin: '0 auto', padding: '26px 24px 0' }}>
           <h1 style={{ margin: '0 0 4px', fontSize: 26, fontWeight: 800 }}>⚙️ Admin Console</h1>
           <p style={{ margin: '0 0 18px', color: C.brandLight, fontSize: 14.5 }}>
-            Verify residents and publish references for every community in one place.
+            See every community at a glance, verify residents, and publish references in one place.
           </p>
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             {tabs.map(t => {
@@ -73,6 +75,7 @@ export default function AdminPage() {
         </div>
       </div>
 
+      {active === 'overview' && <AdminOverviewPage />}
       {active === 'verification' && <AdminVerificationPage queue={queue} projects={projects} reload={reload} actor={user} />}
       {active === 'references' && <AdminReferencesPage />}
       {active === 'activity' && <AdminActivityLogPage />}
