@@ -6,14 +6,20 @@ import { C, card, badge } from '../theme'
 const ACTION_LABELS = {
   'application.submitted': 'Application submitted',
   'application.approved': 'Application approved',
-  'application.rejected': 'Application rejected'
+  'application.rejected': 'Application rejected',
+  'project.created': 'Community added'
 }
 
 const ACTION_COLORS = {
   'application.submitted': [C.blue, C.blueLight],
   'application.approved': [C.success, C.successBg],
-  'application.rejected': [C.danger, C.dangerBg]
+  'application.rejected': [C.danger, C.dangerBg],
+  'project.created': [C.navy, C.neutralBg]
 }
+
+// The log is no longer application-only, so the subject line names whatever the
+// entry actually points at rather than always saying "application".
+const TARGET_LABELS = { application: 'application', project: 'community' }
 
 export default function AdminActivityLogPage() {
   const { user } = useAuth()
@@ -27,7 +33,8 @@ export default function AdminActivityLogPage() {
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 24px' }}>
       <h1 style={{ color: C.navy, marginBottom: 6 }}>Admin & Trust Layer — Activity Log</h1>
       <p style={{ color: C.textMuted, marginTop: 0 }}>
-        Every submission, decision, and document access on verification applications — who did what, and when.
+        Every submission, decision, and document access on verification applications, plus every community
+        added to the directory — who did what, and when.
         This is what makes admin access to identity documents auditable, per our{' '}
         <a href="/privacy" style={{ color: C.blue }}>Privacy Policy</a>.
       </p>
@@ -56,7 +63,8 @@ export default function AdminActivityLogPage() {
                 <div style={{ minWidth: 0 }}>
                   <span style={badge(fg, bg)}>{ACTION_LABELS[e.action] || e.action}</span>
                   <div style={{ fontSize: 12.5, color: C.textMuted, marginTop: 4 }}>
-                    by <strong>{e.actorName}</strong> ({e.actorRole}) · application {e.targetId}
+                    by <strong>{e.actorName}</strong> ({e.actorRole}) · {TARGET_LABELS[e.targetType] || e.targetType} {e.targetId}
+                    {e.action === 'project.created' && e.metadata?.name ? ` — ${e.metadata.name}` : ''}
                   </div>
                 </div>
                 <div style={{ fontSize: 12, color: C.textFaint, whiteSpace: 'nowrap' }}>
