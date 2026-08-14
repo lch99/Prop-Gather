@@ -8,6 +8,7 @@
     "start": "node --env-file-if-exists=.env src/index.js",
     "seed": "node src/db/seed.js",
     "migrate": "node src/db/migrate.cli.js",
+    "create-admin": "node src/db/createAdmin.js",
     "purge": "node src/jobs/purge.cli.js",
     "test": "vitest run",
     "test:watch": "vitest"

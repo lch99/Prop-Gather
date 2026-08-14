@@ -1,8 +1,23 @@
 import { createApp } from './app.js'
+import { getDb } from './db/index.js'
 import { seed } from './db/seed.js'
 import { purgeApplications } from './jobs/purgeApplications.js'
 
-seed()
+// Demo data is opt-in, because a production database has to start empty.
+// seed() inserts six fictional projects plus accounts whose passwords are
+// published in this repo's README (admin@propgather.com / admin123 among
+// them) — harmless locally, an unlocked front door on a server real residents
+// can reach. Set SEED_DEMO_DATA=true for local development (see .env.example),
+// or run `npm run seed` once against an existing database.
+//
+// getDb() runs pending migrations either way, and running it here rather than
+// lazily on the first request means a broken migration fails at boot — loudly,
+// before the process starts serving — instead of 500ing one endpoint later.
+if (process.env.SEED_DEMO_DATA === 'true') {
+  seed()
+} else {
+  getDb()
+}
 
 const PORT = process.env.PORT || 4000
 const app = createApp()

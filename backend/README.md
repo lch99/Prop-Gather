@@ -8,13 +8,34 @@ per-community access control.
 
 ```
 npm install
-cp .env.example .env   # optional — defaults work out of the box
-npm run dev            # starts on http://localhost:4000, auto-seeds on first run
+cp .env.example .env   # sets SEED_DEMO_DATA=true, which you want locally
+npm run dev            # starts on http://localhost:4000
 ```
 
 Seed / demo accounts (see `src/db/seed.js`):
 - `resident@propgather.com` / `resident123` — verified Owner of The Lumina Residences (p1)
 - `admin@propgather.com` / `admin123` — platform admin
+
+**Demo data is opt-in.** The server seeds only when `SEED_DEMO_DATA=true`
+(`.env.example` sets it; `npm run seed` does it on demand for an existing
+database). Without it you get schema and nothing else — which is the point: a
+production database must not start life holding six fictional projects and
+accounts whose passwords are printed above. Migrations run at boot either way.
+
+That leaves a clean database with **no admin**, and no way to make one through
+the API — `POST /api/auth/register` always creates a `resident` and there's no
+password-change endpoint. `npm run create-admin` is the bootstrap:
+
+```
+ADMIN_PASSWORD='<a real password>' npm run create-admin -- \
+  --email=you@example.com --name="Your Name"
+```
+
+It creates the account or promotes an existing one (register normally, then
+promote yourself), refuses passwords under 12 characters and the ones published
+in this README, and records `user.admin_created` / `user.admin_granted` in the
+audit log. Pass the password via `ADMIN_PASSWORD` rather than `--password` to
+keep it out of shell history.
 
 ## Data model
 
@@ -28,6 +49,19 @@ the seed rerun on next start.
 New schema changes go in a new `src/db/migrations/000N_description.sql` file
 (never edit an already-applied one) — keep statements idempotent (`IF NOT EXISTS` /
 `IF NOT EXISTS` column checks) where practical.
+
+Migrations contain **schema only, never rows**. Anything that inserts data
+belongs in `seed.js` (demo) or a CLI like `createAdmin.js` (operational), so
+that applying migrations to a production database can never introduce content.
+
+`0004_performance_indexes.sql` covers the queries the routes and jobs actually
+run — per-project listings, the duplicate-application check, the retention
+purge, audit-log filtering, and the erasure cascade. SQLite indexes PRIMARY KEY
+and UNIQUE constraints but not foreign-key columns, so before it every
+per-project listing was a full table scan. `community_memberships` is
+deliberately absent: the app's hottest query is already served by its
+`UNIQUE(user_id, project_id)` index. Check any new query with
+`EXPLAIN QUERY PLAN` — `SEARCH … USING INDEX` good, `SCAN` worth a look.
 
 ## File storage (S3)
 
@@ -112,6 +146,75 @@ project — granted by an admin approving their join application
 (`POST /api/applications` → `POST /api/applications/:id/decision`). Admins bypass
 the membership check everywhere.
 
+### Adding communities
+
+`POST /api/projects` is **admin-only** and adds a community to the directory
+immediately — no request or approval step. It's the counterpart to the public
+`POST /api/community-requests`, which is what a resident submits when their
+community isn't on the platform yet; an admin reads those back with
+`GET /api/community-requests` and adds the community here.
+
+Only `name`, `type`, `state`, `city` and `address` are required — `ownerCount`,
+`activityLevel`, `units`, `blocks` and `floorsPerBlock` default to empty and can
+be filled in later. `type` is deliberately free text, not an enum: Malaysian
+developments don't fit a fixed list (serviced apartment, SoHo, townhouse, mixed
+strata), and adding a real community shouldn't need a schema change.
+
+The same name in the same city is a **409**, not a second community — two rows
+for one building would split its residents across two private spaces, each
+invisible to the other. The same name in a different city is fine.
+
+Creation is written to `audit_log` as `project.created`. A new community starts
+with no members, so nobody but an admin can see inside it until the first
+application is approved; chat channels are the same fixed list every project
+gets (`CHANNELS` in `src/routes/chat.js`), so it's usable from the moment the
+first resident is verified.
+
+### Editing: one correction per post
+
+Resident-authored content (forum threads, chat messages, petitions, defect
+reports) can be edited **exactly once, by its author**. `edited_at` (added in
+`0003_content_edits.sql`) is both the "allowance spent" flag the routes check and
+the timestamp returned as `editedAt` — a changed post always renders as
+"(edited)", because silently rewriting something people have already replied to
+would be worse than not allowing edits at all. A second attempt gets a 409.
+
+- **Author only, never admins.** An admin quietly rewriting a resident's words is
+  worse than removing the post: a deletion is obvious, an edit isn't. Admins keep
+  DELETE for moderation.
+- **Petitions can't be edited once signed** (`editable: false` in the response so
+  the UI can hide the control). A signature endorses specific wording; letting
+  the text change afterwards would re-attribute everyone's support to something
+  they never read. `target` is fixed for the same reason.
+- **Defect *status* is exempt** — it's a workflow field, not wording, so it stays
+  changeable without limit by the reporter or an admin. The same `PATCH` carries
+  both, applying each rule separately.
+- Category, polls and attachments aren't editable: they're what people voted on
+  and filtered by.
+- Edits re-run the sensitive-content check, so editing can't be used as a way
+  around it. A rejected edit does **not** consume the allowance.
+
+### Who can delete what
+
+Resident-authored content (forum threads, chat messages, petitions, defects) is
+deletable by **its author or an admin**. Management-published content
+(references, documents, polls) is **admin-only** — there is no resident author
+who could reasonably own it. Every delete is written to `audit_log` with a
+`deletedBySelf` flag so admin action on someone else's content is visible.
+
+Two things are intentionally undeletable:
+
+- **`audit_log` entries** — append-only. Nothing, including an admin, can remove
+  one; that's what makes the trail worth keeping.
+- **The acting admin's own account** — `DELETE /api/auth/users/:id` refuses
+  self-deletion, which would revoke the caller's access mid-request and could
+  strand the platform with no admin at all.
+
+The **vendor directory is global**, not per-project: `GET /api/projects/:projectId/vendors`
+only *filters* the shared table by the project's state/city. Vendor management is
+therefore mounted separately at `/api/vendors` (admin-only), so a delete never
+looks project-scoped while actually removing the vendor for every community.
+
 ## PDPA compliance (identity-document handling)
 
 Ownership-proof documents (`applications.document_file`) are the one place this
@@ -135,6 +238,46 @@ implements:
   `ENABLE_RETENTION_JOB=false`) and is also exposed as `npm run purge` for an
   external cron. The S3 bucket lifecycle rule is a backstop, not the primary
   mechanism.
+- **Erasure** — `DELETE /api/auth/users/:id` (admin-only) removes a user and
+  every row referencing them, in dependency order: no FK in the schema uses
+  `ON DELETE CASCADE` and `foreign_keys = ON` is set, so the cascade is explicit
+  in `src/routes/auth.js`. `DELETE /api/applications/:id` additionally lets an
+  admin erase a *decided* application (residents can still only withdraw while
+  `Pending`) — the retention job clears only `document_file`, so without this
+  the applicant's name/email/phone/unit had no removal path at all. Audited as
+  `user.erased` / `application.erased`.
+  - Two exceptions to erasure, both intentional: `audit_log` rows are
+    **anonymised** (`actor_user_id` → NULL), not deleted — erasing the
+    accountability record to satisfy an erasure request would defeat the point
+    of having one. And applications the erased user *decided as an admin* keep
+    the row and lose only `decided_by`, since that record is a different
+    person's data.
+
+## Content restrictions (community-visible posts)
+
+Forum threads, chat messages, defect reports and petitions are visible to every
+verified member of the project and have **no edit endpoint** — once posted, the
+only remedy is deletion. `src/middleware/sensitiveContent.js` therefore rejects
+posts (400) containing:
+
+- a **Malaysian NRIC**, validated by birth-date plausibility *and* an issued
+  birthplace code, so ordinary 12-digit numbers don't trip it;
+- a **payment card number**, validated by Luhn checksum.
+
+Phone numbers and email addresses are deliberately **not** blocked — sharing a
+contractor's number is a core use of the Marketplace and "Contractors &
+Services" categories, and blocking it would break the product to prevent
+something residents are choosing to disclose about themselves.
+
+The 400 response names the *kind* of identifier found but never echoes the
+matched value, which would otherwise copy it into logs and error trackers.
+Detection lives in `src/util/sensitiveContent.js` and is unit-tested
+independently of the routes in `test/sensitiveContent.test.js`.
+
+The frontend carries a **deliberate mirror** of this logic in
+`src/sensitiveContent.js` so a resident is warned while typing rather than
+losing their post to a server rejection. The two share no code — keep them in
+step when changing the rules. The backend is the enforcing copy.
 
 ## Testing
 
