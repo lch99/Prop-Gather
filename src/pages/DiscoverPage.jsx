@@ -22,7 +22,7 @@ function RequestModal({ onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.name.trim() || !form.city.trim() || !form.state.trim()) {
-      setError('Please fill in the community name, city, and state.')
+      setError('Please add the community name, city and state so we can find it.')
       return
     }
     setError('')
@@ -31,7 +31,7 @@ function RequestModal({ onClose }) {
       await api.requestCommunity(form)
       setDone(true)
     } catch {
-      setError('Failed to submit. Please try again.')
+      setError("We couldn't send your request just now. Please try again in a moment.")
     } finally {
       setSubmitting(false)
     }
@@ -431,7 +431,10 @@ export default function DiscoverPage() {
                         {p.activeOfferBanner && <span style={badge(C.warning, C.warningBg)}>🏷 Vendor offer this week</span>}
                       </div>
                       <div style={{ fontSize: 13, color: C.text, marginTop: 14 }}>
-                        <span style={{ color: C.textMuted }}>Latest: </span>{p.latestThread}
+                        {/* a just-added community has no threads yet */}
+                        {p.latestThread
+                          ? <><span style={{ color: C.textMuted }}>Latest: </span>{p.latestThread}</>
+                          : <span style={{ color: C.textFaint, fontStyle: 'italic' }}>New community — no posts yet.</span>}
                       </div>
                       <div style={{ flexGrow: 1 }} />
                       {/* clear, full-width action affordance so it's obvious the card opens the community */}

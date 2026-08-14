@@ -26,7 +26,7 @@ export function requireAuth(req, _res, next) {
 export function requireRole(role) {
   return (req, _res, next) => {
     if (!req.user) return next(unauthorized())
-    if (req.user.role !== role) return next(forbidden(`Requires ${role} role`))
+    if (req.user.role !== role) return next(forbidden('This area is for platform admins only.'))
     next()
   }
 }
@@ -42,7 +42,7 @@ export function requireMembership(req, _res, next) {
     .prepare('SELECT * FROM community_memberships WHERE user_id = ? AND project_id = ?')
     .get(req.user.id, projectId)
 
-  if (!membership) return next(forbidden('You must be a verified resident of this community'))
+  if (!membership) return next(forbidden('Only verified residents of this community can view this. Submit your proof of ownership to get access.'))
   req.membership = membership
   next()
 }

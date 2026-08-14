@@ -38,13 +38,13 @@ const documentFileSchema = z.object({
 })
 
 const createSchema = z.object({
-  projectId: z.string().min(1, 'projectId is required'),
-  unit: z.string().trim().min(1, 'Unit / lot number is required').max(60),
-  tier: z.enum(['Owner', 'House Owner'], { errorMap: () => ({ message: "tier must be 'Owner' or 'House Owner'" }) }),
-  document: z.string().trim().min(1, 'A proof document label is required'),
+  projectId: z.string().min(1, 'Please select your property project.'),
+  unit: z.string().trim().min(1, 'Please enter your unit / lot number.').max(60),
+  tier: z.enum(['Owner', 'House Owner'], { errorMap: () => ({ message: 'Please choose whether you are a Property Owner or a House Owner.' }) }),
+  document: z.string().trim().min(1, 'Please tell us which document you are uploading.'),
   documentFile: documentFileSchema,
   phone: z.string().trim().max(40).optional(),
-  consent: z.literal(true, { errorMap: () => ({ message: 'You must consent to document review before submitting' }) })
+  consent: z.literal(true, { errorMap: () => ({ message: 'Please tick the consent box so we can review your document.' }) })
 })
 
 // Adds a short-lived presigned GET URL for the stored S3 key, under the `dataUrl`
@@ -69,7 +69,7 @@ const uploadUrlSchema = z.object({
 // returned `key` as documentFile.key in POST /.
 applicationsRouter.post('/upload-url', requireAuth, validate(uploadUrlSchema), async (req, res, next) => {
   const { fileType } = req.body
-  if (!ALLOWED_DOCUMENT_TYPES.has(fileType)) return next(badRequest('Unsupported file type'))
+  if (!ALLOWED_DOCUMENT_TYPES.has(fileType)) return next(badRequest('That file type isn\'t supported. Please upload a photo (JPG or PNG) or a PDF.'))
 
   try {
     const key = buildDocumentKey(req.user.id)
@@ -85,7 +85,7 @@ applicationsRouter.post('/', requireAuth, validate(createSchema), async (req, re
   const db = getDb()
 
   const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId)
-  if (!project) return next(badRequest('Unknown projectId'))
+  if (!project) return next(badRequest('We couldn\'t find that community. Please pick your property project from the list again.'))
 
   const alreadyMember = db.prepare('SELECT 1 FROM community_memberships WHERE user_id = ? AND project_id = ?').get(req.user.id, projectId)
   if (alreadyMember) return next(conflict('You are already a verified member of this community'))
@@ -95,10 +95,10 @@ applicationsRouter.post('/', requireAuth, validate(createSchema), async (req, re
 
   try {
     const head = await headObject(documentFile.key)
-    if (!head) return next(badRequest('Uploaded file not found — please upload it again'))
+    if (!head) return next(badRequest('We couldn\'t find your uploaded file. Please attach it again.'))
     if (head.ContentLength > MAX_DOCUMENT_MB * 1024 * 1024) {
       await deleteObject(documentFile.key).catch(() => {})
-      return next(badRequest(`Uploaded file exceeds the ${MAX_DOCUMENT_MB} MB limit`))
+      return next(badRequest(`That file is larger than ${MAX_DOCUMENT_MB} MB. Please upload a smaller file.`))
     }
   } catch (err) {
     return next(err)
@@ -195,14 +195,14 @@ applicationsRouter.get('/', requireAuth, requireRole('admin'), async (req, res, 
 })
 
 const decisionSchema = z.object({
-  decision: z.enum(['approve', 'reject'], { errorMap: () => ({ message: "decision must be 'approve' or 'reject'" }) })
+  decision: z.enum(['approve', 'reject'], { errorMap: () => ({ message: 'Please choose either Approve or Reject.' }) })
 })
 
 applicationsRouter.post('/:id/decision', requireAuth, requireRole('admin'), validate(decisionSchema), async (req, res, next) => {
   const db = getDb()
   const app = db.prepare('SELECT * FROM applications WHERE id = ?').get(req.params.id)
-  if (!app) return next(notFound('Application not found'))
-  if (app.status !== 'Pending') return next(conflict(`Application has already been ${app.status.toLowerCase()}`))
+  if (!app) return next(notFound('We couldn\'t find that application.'))
+  if (app.status !== 'Pending') return next(conflict(`This application has already been ${app.status.toLowerCase()}, so it can't be decided again.`))
 
   const status = req.body.decision === 'approve' ? 'Approved' : 'Rejected'
   const decidedAt = new Date().toISOString()
@@ -232,23 +232,39 @@ applicationsRouter.post('/:id/decision', requireAuth, requireRole('admin'), vali
   res.json(await withDocumentUrl(row))
 })
 
+// Residents may withdraw only while Pending — once an admin has decided, the
+// application is part of the decision record. Admins can additionally erase a
+// decided application, which is what makes a PDPA s.34/s.38 erasure request
+// actionable: the row holds the applicant's name, email, phone and unit, and
+// there is no other endpoint that can remove it. The retention job only clears
+// document_file, never these fields.
 applicationsRouter.delete('/:id', requireAuth, async (req, res, next) => {
   const db = getDb()
   const app = db.prepare('SELECT * FROM applications WHERE id = ?').get(req.params.id)
-  if (!app) return next(notFound('Application not found'))
-  if (app.user_id !== req.user.id && req.user.role !== 'admin') return next(forbidden())
-  if (app.status !== 'Pending') return next(conflict('Only pending applications can be withdrawn'))
+  if (!app) return next(notFound('We couldn\'t find that application.'))
+
+  const isAdmin = req.user.role === 'admin'
+  if (app.user_id !== req.user.id && !isAdmin) return next(forbidden('You can only withdraw your own application.'))
+  if (app.status !== 'Pending' && !isAdmin) return next(conflict('This application has already been reviewed, so it can no longer be withdrawn.'))
+
+  const erasingDecided = app.status !== 'Pending'
 
   db.prepare('DELETE FROM applications WHERE id = ?').run(app.id)
 
   recordAudit(db, {
     actorUserId: req.user.id,
     actorRole: req.user.role,
-    action: 'application.withdrawn',
+    // A decided application being removed is an erasure of a decision record,
+    // not a withdrawal — they need to be distinguishable in the audit trail.
+    action: erasingDecided ? 'application.erased' : 'application.withdrawn',
     targetType: 'application',
     targetId: app.id,
     projectId: app.project_id,
-    metadata: { applicantUserId: app.user_id, withdrawnBySelf: app.user_id === req.user.id }
+    metadata: {
+      applicantUserId: app.user_id,
+      withdrawnBySelf: app.user_id === req.user.id,
+      ...(erasingDecided ? { erasedStatus: app.status } : {})
+    }
   })
 
   const documentFile = app.document_file ? JSON.parse(app.document_file) : null

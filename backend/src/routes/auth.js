@@ -4,11 +4,12 @@ import { getDb } from '../db/index.js'
 import { id } from '../util/ids.js'
 import { hashPassword, verifyPassword, signToken } from '../util/auth.js'
 import { validate } from '../middleware/validate.js'
-import { requireAuth } from '../middleware/auth.js'
+import { requireAuth, requireRole } from '../middleware/auth.js'
 import { rateLimit } from '../middleware/rateLimit.js'
-import { conflict, unauthorized } from '../util/errors.js'
+import { conflict, unauthorized, notFound, forbidden } from '../util/errors.js'
 import { toMembership } from '../util/serialize.js'
 import { recordAudit } from '../util/audit.js'
+import { deleteObject } from '../util/s3.js'
 
 export const authRouter = Router()
 
@@ -56,7 +57,7 @@ authRouter.post('/register', validate(registerSchema), (req, res, next) => {
     const db = getDb()
 
     const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email)
-    if (existing) return next(conflict('An account with this email already exists'))
+    if (existing) return next(conflict('An account with this email already exists. Try signing in instead.'))
 
     const user = {
       id: id('usr'),
@@ -122,4 +123,92 @@ authRouter.get('/me', requireAuth, (req, res, next) => {
   } catch (err) {
     next(err)
   }
+})
+
+// PDPA s.34/s.38 erasure. No FK in the schema uses ON DELETE CASCADE and
+// `foreign_keys = ON` is set, so every referencing row has to be removed here in
+// dependency order or the final DELETE throws a constraint error.
+//
+// Two things are deliberately kept rather than deleted:
+//   - audit_log rows are anonymised (actor_user_id -> NULL), not removed. The
+//     accountability record of what an admin did is exactly what PDPA requires
+//     be retained; erasing it to satisfy an erasure request would defeat it.
+//   - applications this user *decided* as an admin keep the row and lose only
+//     the decided_by pointer — that record belongs to a different applicant.
+authRouter.delete('/users/:id', requireAuth, requireRole('admin'), async (req, res, next) => {
+  const db = getDb()
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+  if (!target) return next(notFound("We couldn't find that user account."))
+  // Self-deletion would revoke the acting admin's own access mid-request and
+  // could remove the last admin account entirely.
+  if (target.id === req.user.id) return next(forbidden("You can't delete your own admin account. Ask another admin to do it."))
+
+  // Collected before the transaction: S3 deletes are async and must not run
+  // inside better-sqlite3's synchronous transaction.
+  const documentKeys = db.prepare('SELECT document_file FROM applications WHERE user_id = ?').all(target.id)
+    .map(r => (r.document_file ? JSON.parse(r.document_file)?.key : null))
+    .filter(Boolean)
+
+  const counts = db.transaction(() => {
+    // Threads authored by the user take their poll and upvotes with them.
+    const threadIds = db.prepare('SELECT id FROM forum_threads WHERE author_user_id = ?').all(target.id).map(r => r.id)
+    for (const threadId of threadIds) {
+      const poll = db.prepare('SELECT id FROM thread_polls WHERE thread_id = ?').get(threadId)
+      if (poll) {
+        db.prepare('DELETE FROM thread_poll_votes WHERE poll_id = ?').run(poll.id)
+        db.prepare('DELETE FROM thread_poll_options WHERE poll_id = ?').run(poll.id)
+        db.prepare('DELETE FROM thread_polls WHERE id = ?').run(poll.id)
+      }
+      db.prepare('DELETE FROM forum_upvotes WHERE thread_id = ?').run(threadId)
+    }
+    db.prepare('DELETE FROM forum_threads WHERE author_user_id = ?').run(target.id)
+
+    // Petitions created by the user take their signatures with them.
+    const petitionIds = db.prepare('SELECT id FROM petitions WHERE created_by_user_id = ?').all(target.id).map(r => r.id)
+    for (const petitionId of petitionIds) {
+      db.prepare('DELETE FROM petition_signatures WHERE petition_id = ?').run(petitionId)
+    }
+    db.prepare('DELETE FROM petitions WHERE created_by_user_id = ?').run(target.id)
+
+    // The user's own participation in content owned by others.
+    db.prepare('DELETE FROM forum_upvotes WHERE user_id = ?').run(target.id)
+    db.prepare('DELETE FROM thread_poll_votes WHERE user_id = ?').run(target.id)
+    db.prepare('DELETE FROM poll_votes WHERE user_id = ?').run(target.id)
+    db.prepare('DELETE FROM petition_signatures WHERE user_id = ?').run(target.id)
+    const messages = db.prepare('DELETE FROM chat_messages WHERE sender_user_id = ?').run(target.id).changes
+    const defects = db.prepare('DELETE FROM defects WHERE reported_by_user_id = ?').run(target.id).changes
+    db.prepare('DELETE FROM fee_payments WHERE user_id = ?').run(target.id)
+    db.prepare('DELETE FROM community_memberships WHERE user_id = ?').run(target.id)
+    const applications = db.prepare('DELETE FROM applications WHERE user_id = ?').run(target.id).changes
+
+    db.prepare('UPDATE applications SET decided_by = NULL WHERE decided_by = ?').run(target.id)
+    const auditRows = db.prepare('UPDATE audit_log SET actor_user_id = NULL WHERE actor_user_id = ?').run(target.id).changes
+
+    db.prepare('DELETE FROM users WHERE id = ?').run(target.id)
+
+    return { threads: threadIds.length, petitions: petitionIds.length, messages, defects, applications, auditRowsAnonymised: auditRows }
+  })()
+
+  // Recorded after the delete so the anonymisation pass above can't blank the
+  // acting admin's own id on this entry. targetId keeps the erased user's id:
+  // it is no longer resolvable to a person, which is the point.
+  recordAudit(db, {
+    actorUserId: req.user.id,
+    actorRole: req.user.role,
+    action: 'user.erased',
+    targetType: 'user',
+    targetId: target.id,
+    metadata: counts
+  })
+
+  for (const key of documentKeys) {
+    // Best-effort, same as application withdrawal — the bucket lifecycle rule
+    // (backend/infra/s3-lifecycle.json) is the backstop.
+    await deleteObject(key).catch(err => {
+      // eslint-disable-next-line no-console
+      console.error(`Failed to delete S3 object ${key}`, err)
+    })
+  }
+
+  res.json({ ok: true, erased: counts })
 })

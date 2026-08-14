@@ -20,7 +20,7 @@ const attachmentSchema = z.object({
 })
 
 const createSchema = z.object({
-  type: z.enum(REFERENCE_TYPES, { errorMap: () => ({ message: 'Unknown reference type' }) }),
+  type: z.enum(REFERENCE_TYPES, { errorMap: () => ({ message: 'Please choose a valid contact type.' }) }),
   title: z.string().trim().min(1, 'Title is required').max(200),
   description: z.string().trim().max(4000).optional().default(''),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
@@ -51,7 +51,7 @@ referencesRouter.post('/', requireAuth, requireRole('admin'), validate(createSch
 referencesRouter.delete('/:refId', requireAuth, requireRole('admin'), (req, res, next) => {
   const db = getDb()
   const row = db.prepare('SELECT * FROM references_ WHERE id = ? AND project_id = ?').get(req.params.refId, req.params.projectId)
-  if (!row) return next(notFound('Reference not found'))
+  if (!row) return next(notFound("We couldn't find that contact — it may have been removed."))
   db.prepare('DELETE FROM references_ WHERE id = ?').run(row.id)
   res.json({ ok: true })
 })

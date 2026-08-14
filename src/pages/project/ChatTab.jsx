@@ -3,6 +3,7 @@ import { api } from '../../api'
 import { C, card, button, badge, tierColor } from '../../theme'
 import { useAuth } from '../../auth'
 import { useAttachments, AttachmentPicker, AttachmentList } from '../../components/Attachments'
+import SensitiveContentNotice, { hasSensitiveContent } from '../../components/SensitiveContentNotice'
 
 const channelIcons = {
   general: '# general',
@@ -18,6 +19,9 @@ export default function ChatTab({ projectId }) {
   const [active, setActive] = useState('general')
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
+  const [editingId, setEditingId] = useState(null) // message id currently open in the inline editor
+  const [editDraft, setEditDraft] = useState('')
+  const [editError, setEditError] = useState('')
   const { attachments, addFiles, removeAttachment, error: uploadError, reset: resetAttachments } = useAttachments(4)
   const bottomRef = useRef(null)
 
@@ -37,8 +41,37 @@ export default function ChatTab({ projectId }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const blockedByPii = hasSensitiveContent(text)
+  const editBlocked = hasSensitiveContent(editDraft)
+
+  // One correction per message — enough for the typo you notice immediately,
+  // not enough to rewrite what someone already replied to.
+  const startEdit = (msg) => {
+    setEditingId(msg.id)
+    setEditDraft(msg.text)
+    setEditError('')
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditError('')
+  }
+
+  const saveEdit = async (messageId) => {
+    if (!editDraft.trim() || editBlocked) return
+    try {
+      const updated = await api.editChatMessage(projectId, active, messageId, editDraft.trim())
+      setMessages(ms => ms.map(m => m.id === updated.id ? updated : m))
+      setEditingId(null)
+      setEditError('')
+    } catch (err) {
+      setEditError(err.message)
+    }
+  }
+
   const send = async () => {
     if (!text.trim() && attachments.length === 0) return
+    if (blockedByPii) return
     const msg = await api.sendChatMessage(projectId, active, text.trim(), attachments)
     setMessages(m => [...m, msg])
     setText('')
@@ -97,19 +130,59 @@ export default function ChatTab({ projectId }) {
                 <span style={{ ...badge(tierColor(m.tier), `${tierColor(m.tier)}1a`), fontSize: 11 }}>{m.tier}</span>
                 {m.verified && <span style={{ fontSize: 11, color: C.success }}>✓</span>}
                 <span style={{ fontSize: 11, color: C.textFaint, marginLeft: 'auto' }}>{m.time}</span>
-                {m.sender === user?.name && (
-                  <button
-                    onClick={() => deleteMessage(m.id)}
-                    title="Delete your message"
-                    style={{ border: 'none', background: 'none', color: C.danger, fontSize: 12, cursor: 'pointer', padding: 0 }}
-                  >
-                    🗑️
-                  </button>
+                {m.sender === user?.name && editingId !== m.id && (
+                  <>
+                    {/* One edit per message — once spent, only delete remains. */}
+                    {!m.editedAt && m.text && (
+                      <button
+                        onClick={() => startEdit(m)}
+                        title="Edit your message (once only)"
+                        style={{ border: 'none', background: 'none', color: C.blue, fontSize: 12, cursor: 'pointer', padding: 0 }}
+                      >
+                        ✏️
+                      </button>
+                    )}
+                    <button
+                      onClick={() => deleteMessage(m.id)}
+                      title="Delete your message"
+                      style={{ border: 'none', background: 'none', color: C.danger, fontSize: 12, cursor: 'pointer', padding: 0 }}
+                    >
+                      🗑️
+                    </button>
+                  </>
                 )}
               </div>
-              {m.text && (
+              {editingId === m.id ? (
+                <div style={{ display: 'grid', gap: 6, maxWidth: '85%' }}>
+                  <input
+                    value={editDraft}
+                    onChange={e => setEditDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveEdit(m.id); if (e.key === 'Escape') cancelEdit() }}
+                    autoFocus
+                    style={{ padding: '8px 12px', border: `1px solid ${C.blue}`, borderRadius: C.radiusSm, fontSize: 14 }}
+                  />
+                  <SensitiveContentNotice values={[editDraft]} />
+                  <div style={{ fontSize: 11, color: C.textFaint }}>You can edit a message once. Enter to save, Esc to cancel.</div>
+                  {editError && <div style={{ fontSize: 12, color: C.danger }}>{editError}</div>}
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      style={{ ...button('primary'), fontSize: 12, padding: '6px 12px', ...(editBlocked ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+                      onClick={() => saveEdit(m.id)}
+                      disabled={editBlocked}
+                    >
+                      Save
+                    </button>
+                    <button style={{ ...button('outline'), fontSize: 12, padding: '6px 12px' }} onClick={cancelEdit}>Cancel</button>
+                  </div>
+                </div>
+              ) : m.text && (
                 <div style={{ fontSize: 14, color: C.text, background: '#f6f7f9', padding: '8px 12px', borderRadius: C.radiusSm, display: 'inline-block', maxWidth: '85%' }}>
                   {m.text}
+                  {m.editedAt && (
+                    <span style={{ color: C.textFaint, fontSize: 11, marginLeft: 6 }} title={`Edited ${new Date(m.editedAt).toLocaleString('en-MY')}`}>
+                      (edited)
+                    </span>
+                  )}
                 </div>
               )}
               <AttachmentList attachments={m.attachments} thumb={140} style={{ marginTop: m.text ? 6 : 0 }} />
@@ -154,8 +227,15 @@ export default function ChatTab({ projectId }) {
               placeholder="Type a message..."
               style={{ flex: 1, padding: '10px 12px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 14, background: '#fff' }}
             />
-            <button style={button('primary')} onClick={send}>Send</button>
+            <button
+              style={{ ...button('primary'), ...(blockedByPii ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+              onClick={send}
+              disabled={blockedByPii}
+            >
+              Send
+            </button>
           </div>
+          <SensitiveContentNotice values={[text]} />
         </div>
       </div>
     </div>

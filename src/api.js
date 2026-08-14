@@ -3,8 +3,18 @@
 // Mutations (upvotes, votes, posts) work in-memory and reset on page refresh.
 
 import * as seed from './demoData.js'
+import { detectSensitiveContent, sensitiveContentMessage } from './sensitiveContent.js'
 
 const clone = (x) => JSON.parse(JSON.stringify(x))
+
+// Mirrors the backend's blockSensitiveContent middleware, which returns a 400
+// for the same inputs (see backend/src/middleware/sensitiveContent.js). Throwing
+// here keeps the demo honest: a post the real server would reject is rejected in
+// the prototype too, so the UI never learns to depend on it succeeding.
+function assertNoSensitiveContent(...values) {
+  const kinds = detectSensitiveContent(values)
+  if (kinds.length) throw new Error(sensitiveContentMessage(kinds))
+}
 
 // Mutable in-memory store — deep clone seed data so mutations don't affect the originals
 const store = {
@@ -28,13 +38,13 @@ const store = {
   auditLog: [],
 }
 
-function logAudit({ actorName, actorRole, action, targetId, projectId, metadata = {} }) {
+function logAudit({ actorName, actorRole, action, targetType = 'application', targetId, projectId, metadata = {} }) {
   store.auditLog.unshift({
     id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     actorName,
     actorRole,
     action,
-    targetType: 'application',
+    targetType,
     targetId,
     projectId,
     metadata,
@@ -44,6 +54,9 @@ function logAudit({ actorName, actorRole, action, targetId, projectId, metadata 
 
 // Helper to add a small async delay so UI loading states are visible
 const delay = (ms = 120) => new Promise(r => setTimeout(r, ms))
+
+// Mirrors CHANNELS in backend/src/routes/chat.js — the same set every project gets.
+const DEFAULT_CHAT_CHANNELS = ['general', 'defects', 'announcements', 'facilities', 'renovation']
 
 // Vendor filtering: match by project state or city appearing in vendor districts
 function vendorsForProject(projectId) {
@@ -79,6 +92,56 @@ export const api = {
     const p = store.projects.find(p => p.id === id)
     if (!p) throw new Error('Project not found')
     return clone(p)
+  },
+
+  // Admin-only, mirrors POST /api/projects — admins add communities directly,
+  // without going through the resident-facing "request a community" flow.
+  // `role` is the acting user's role (from useAuth()), same convention as
+  // getVerificationQueue/getAuditLog since this mock has no server boundary.
+  createProject: async (data, role, actor) => {
+    await delay()
+    if (role !== 'admin') throw new Error('Only platform admins can add a community.')
+
+    const name = (data.name || '').trim()
+    const city = (data.city || '').trim()
+    const state = (data.state || '').trim()
+    const type = (data.type || '').trim()
+    const address = (data.address || '').trim()
+    if (!name || !city || !state || !type || !address) {
+      throw new Error('Please fill in the community name, property type, address, city and state.')
+    }
+    // Same guard as the backend's 409: two rows for one building would split its
+    // residents across two private spaces, each invisible to the other.
+    const clash = store.projects.find(p =>
+      p.name.toLowerCase() === name.toLowerCase() && p.city.toLowerCase() === city.toLowerCase()
+    )
+    if (clash) throw new Error(`${clash.name} is already on PropGather in ${clash.city}. Open the existing community instead of adding a second one.`)
+
+    const project = {
+      id: `p-${Date.now().toString(36)}`,
+      name, type, state, city, address,
+      ownerCount: Number(data.ownerCount) || 0,
+      activityLevel: data.activityLevel || 'Low',
+      units: Number(data.units) || 0,
+      blocks: (data.blocks || []).map(b => b.trim()).filter(Boolean),
+      floorsPerBlock: Number(data.floorsPerBlock) || 0,
+      latestThread: null
+    }
+    store.projects.push(project)
+    // The backend serves the same fixed channel list for every project (see
+    // CHANNELS in backend/src/routes/chat.js), so a community added here gets
+    // them too — otherwise its Chat tab would open with no channels at all.
+    store.chatChannels[project.id] = [...DEFAULT_CHAT_CHANNELS]
+    logAudit({
+      actorName: actor?.name || 'Unknown admin',
+      actorRole: 'admin',
+      action: 'project.created',
+      targetType: 'project',
+      targetId: project.id,
+      projectId: project.id,
+      metadata: { name, type, city, state }
+    })
+    return clone(project)
   },
 
   getMe: async () => {
@@ -181,18 +244,36 @@ export const api = {
   },
 
   createThread: async (projectId, data) => {
+    assertNoSensitiveContent(data.title, data.body)
     await delay()
     const thread = {
       ...data,
       id: `f${projectId.slice(1)}-${Date.now()}`,
       upvotes: 0,
       replies: 0,
+      editedAt: null,
       pinned: false,
       createdAt: new Date().toISOString(),
       author: { name: 'Alex Lim', unit: 'B-21-03', tier: 'Owner', verified: true }
     }
     if (!store.forumThreads[projectId]) store.forumThreads[projectId] = []
     store.forumThreads[projectId].unshift(thread)
+    return clone(thread)
+  },
+
+  // One edit per post, author only — mirrors PATCH /api/projects/:id/forum/:threadId.
+  // `editedAt` is both the "allowance spent" flag and what the UI shows as
+  // "(edited)", so a changed post is never silently different from what people
+  // replied to.
+  editThread: async (projectId, threadId, { title, body }) => {
+    assertNoSensitiveContent(title, body)
+    const thread = (store.forumThreads[projectId] || []).find(t => t.id === threadId)
+    if (!thread) throw new Error('Thread not found')
+    if (thread.editedAt) throw new Error('This post has already been edited. Posts can only be edited once.')
+    await delay()
+    thread.title = title
+    thread.body = body
+    thread.editedAt = new Date().toISOString()
     return clone(thread)
   },
 
@@ -237,16 +318,30 @@ export const api = {
   },
 
   sendChatMessage: async (projectId, channel, text, attachments = []) => {
+    assertNoSensitiveContent(text)
     await delay(60)
     const msg = {
       id: `m${++_msgCounter}`,
       sender: 'Alex Lim', unit: 'B-21-03', tier: 'Owner', verified: true,
-      text, attachments,
+      text, attachments, editedAt: null,
       time: new Date().toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false })
     }
     if (!store.chatMessages[projectId]) store.chatMessages[projectId] = {}
     if (!store.chatMessages[projectId][channel]) store.chatMessages[projectId][channel] = []
     store.chatMessages[projectId][channel].push(msg)
+    return clone(msg)
+  },
+
+  // One edit per message, sender only — mirrors
+  // PATCH /api/projects/:projectId/chat/:channel/messages/:messageId.
+  editChatMessage: async (projectId, channel, messageId, text) => {
+    assertNoSensitiveContent(text)
+    const msg = (store.chatMessages[projectId]?.[channel] || []).find(m => m.id === messageId)
+    if (!msg) throw new Error('Message not found')
+    if (msg.editedAt) throw new Error('This message has already been edited. Messages can only be edited once.')
+    await delay(60)
+    msg.text = text
+    msg.editedAt = new Date().toISOString()
     return clone(msg)
   },
 
@@ -274,6 +369,7 @@ export const api = {
   },
 
   createPetition: async (projectId, data) => {
+    assertNoSensitiveContent(data.title, data.description)
     await delay()
     const pet = {
       ...data,
@@ -322,6 +418,7 @@ export const api = {
   },
 
   createDefect: async (projectId, data) => {
+    assertNoSensitiveContent(data.title, data.description)
     await delay()
     const defect = {
       ...data,

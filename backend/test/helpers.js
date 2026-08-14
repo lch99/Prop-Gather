@@ -33,6 +33,7 @@ export function authed(app, token) {
   return {
     get: (url) => request(app).get(url).set('Authorization', `Bearer ${token}`),
     post: (url) => request(app).post(url).set('Authorization', `Bearer ${token}`),
+    patch: (url) => request(app).patch(url).set('Authorization', `Bearer ${token}`),
     delete: (url) => request(app).delete(url).set('Authorization', `Bearer ${token}`)
   }
 }

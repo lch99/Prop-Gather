@@ -49,6 +49,34 @@ review this and the linked code before you rely on it.
       `DELETE .../chat/:channel/messages/:messageId`, wired into
       `ForumTab.jsx`/`ChatTab.jsx`. Extends the "withdraw consent / delete my
       data" right beyond just the verification document.
+- [x] **Full account erasure** — `DELETE /api/auth/users/:id` (admin only),
+      `backend/src/routes/auth.js`. Removes the user row plus every referencing
+      row (memberships, applications + their S3 documents, threads and their
+      polls/upvotes, petitions and their signatures, chat messages, defects,
+      poll votes, fee payments). This is what makes an erasure request
+      actionable end-to-end rather than per-resource. Two things are
+      deliberately retained: `audit_log` rows are anonymised
+      (`actor_user_id` → NULL) rather than deleted, since the accountability
+      record is what PDPA requires be kept; and applications the erased user
+      *decided* as an admin keep the row and lose only the `decided_by` link,
+      because that record belongs to a different applicant.
+- [x] **Admin erasure of a decided application** — `DELETE /api/applications/:id`.
+      Residents can still only withdraw while `Pending`, but an admin can now
+      remove an `Approved`/`Rejected` application. Previously nothing could:
+      the retention job clears only `document_file`, never the name, email,
+      phone and unit on the row. Audited as `application.erased` (distinct from
+      `application.withdrawn`).
+- [x] **Personal identifiers blocked from community-visible content** —
+      `backend/src/util/sensitiveContent.js` +
+      `backend/src/middleware/sensitiveContent.js`, applied to forum threads,
+      chat messages, defect reports and petitions. Rejects posts containing a
+      Malaysian NRIC (validated by birth-date and issued birthplace code) or a
+      Luhn-valid payment card number, with a 400 that never echoes the matched
+      value back into logs. Phone numbers and emails are intentionally allowed —
+      sharing a contractor's number is a core use of the Marketplace and
+      Contractors categories. Limits the "collect only what's needed"
+      Principle at the point of entry, since forum/chat content has no edit
+      endpoint and is visible to every verified member.
 - [x] Breach response runbook (template) — `backend/docs/BREACH_RESPONSE.md`
 - [x] DPO role reference doc (what the role must do once someone is
       appointed — not an appointment itself) — `backend/docs/DPO_ROLE.md`

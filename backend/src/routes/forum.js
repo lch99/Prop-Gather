@@ -4,7 +4,8 @@ import { getDb } from '../db/index.js'
 import { id } from '../util/ids.js'
 import { validate } from '../middleware/validate.js'
 import { requireAuth, requireMembership } from '../middleware/auth.js'
-import { badRequest, notFound, forbidden } from '../util/errors.js'
+import { blockSensitiveContent } from '../middleware/sensitiveContent.js'
+import { badRequest, notFound, forbidden, conflict } from '../util/errors.js'
 import { recordAudit } from '../util/audit.js'
 
 export const forumRouter = Router({ mergeParams: true })
@@ -22,15 +23,17 @@ const attachmentSchema = z.object({
 })
 
 const pollSchema = z.object({
-  question: z.string().trim().min(1),
-  options: z.array(z.string().trim().min(1)).min(2, 'A poll needs at least 2 options').max(8)
+  question: z.string().trim().min(1, 'Please enter a question for your poll.'),
+  options: z.array(z.string().trim().min(1, 'Poll options can\'t be left blank.'))
+    .min(2, 'A poll needs at least 2 options.')
+    .max(8, 'A poll can have at most 8 options.')
 })
 
 const createThreadSchema = z.object({
-  category: z.enum(CATEGORIES, { errorMap: () => ({ message: 'Unknown category' }) }),
-  title: z.string().trim().min(1, 'Title is required').max(200),
-  body: z.string().trim().min(1, 'Post body is required').max(5000),
-  attachments: z.array(attachmentSchema).max(6, 'Up to 6 files').optional().default([]),
+  category: z.enum(CATEGORIES, { errorMap: () => ({ message: 'Please pick a category for your post.' }) }),
+  title: z.string().trim().min(1, 'Please give your post a title.').max(200, 'Your title is too long — please keep it under 200 characters.'),
+  body: z.string().trim().min(1, 'Please write something in your post.').max(5000, 'Your post is too long — please keep it under 5,000 characters.'),
+  attachments: z.array(attachmentSchema).max(6, 'You can attach up to 6 files.').optional().default([]),
   poll: pollSchema.nullable().optional()
 })
 
@@ -73,6 +76,7 @@ function serializeThread(db, row) {
     upvotes,
     replies: row.replies,
     createdAt: row.created_at,
+    editedAt: row.edited_at || null,
     attachments: JSON.parse(row.attachments),
     author: author ? { name: author.name, unit: author.unit || '-', tier: author.tier || 'Owner', verified: true } : null,
     ...(poll ? { poll } : {})
@@ -89,9 +93,9 @@ forumRouter.get('/', requireAuth, requireMembership, (req, res) => {
   res.json(rows.map(r => serializeThread(db, r)))
 })
 
-forumRouter.post('/', requireAuth, requireMembership, validate(createThreadSchema), (req, res, next) => {
+forumRouter.post('/', requireAuth, requireMembership, validate(createThreadSchema), blockSensitiveContent('title', 'body'), (req, res, next) => {
   const { category, title, body, attachments, poll } = req.body
-  if (!attachAttachmentsTotalSize(attachments)) return next(badRequest('Attachments exceed 10 MB total'))
+  if (!attachAttachmentsTotalSize(attachments)) return next(badRequest('Your attachments add up to more than 10 MB. Please remove one or attach smaller files.'))
 
   const db = getDb()
   const projectId = req.params.projectId
@@ -114,27 +118,69 @@ forumRouter.post('/', requireAuth, requireMembership, validate(createThreadSchem
   res.status(201).json(serializeThread(db, row))
 })
 
+const editThreadSchema = z.object({
+  title: z.string().trim().min(1, 'Please give your post a title.').max(200, 'Your title is too long — please keep it under 200 characters.'),
+  body: z.string().trim().min(1, 'Please write something in your post.').max(5000, 'Your post is too long — please keep it under 5,000 characters.')
+})
+
+// One edit, author only.
+//
+// Author only — not admins: an admin quietly rewriting a resident's words is
+// worse than removing the post, because a deletion is obvious and an edit isn't.
+// Admins keep DELETE for moderation.
+//
+// One edit — the point is to fix a typo shortly after posting, not to let a
+// thread others have already replied to and upvoted be rewritten into something
+// else later. `edited_at` records that the allowance is spent and is surfaced as
+// `editedAt` so every reader can see the post changed.
+//
+// The category, poll and attachments are deliberately not editable: they're what
+// people voted on and filtered by, not wording.
+forumRouter.patch('/:threadId', requireAuth, requireMembership, validate(editThreadSchema), blockSensitiveContent('title', 'body'), (req, res, next) => {
+  const db = getDb()
+  const thread = db.prepare('SELECT * FROM forum_threads WHERE id = ? AND project_id = ?').get(req.params.threadId, req.params.projectId)
+  if (!thread) return next(notFound("We couldn't find that post — it may have been removed."))
+  if (thread.author_user_id !== req.user.id) return next(forbidden('Only the person who wrote this post can edit it.'))
+  if (thread.edited_at) return next(conflict('This post has already been edited. Posts can only be edited once.'))
+
+  const editedAt = new Date().toISOString()
+  db.prepare('UPDATE forum_threads SET title = ?, body = ?, edited_at = ? WHERE id = ?')
+    .run(req.body.title, req.body.body, editedAt, thread.id)
+
+  recordAudit(db, {
+    actorUserId: req.user.id,
+    actorRole: req.user.role,
+    action: 'forum.thread_edited',
+    targetType: 'forum_thread',
+    targetId: thread.id,
+    projectId: req.params.projectId,
+    metadata: { titleChanged: thread.title !== req.body.title, bodyChanged: thread.body !== req.body.body }
+  })
+
+  res.json(serializeThread(db, db.prepare('SELECT * FROM forum_threads WHERE id = ?').get(thread.id)))
+})
+
 forumRouter.post('/:threadId/upvote', requireAuth, requireMembership, (req, res, next) => {
   const db = getDb()
   const row = db.prepare('SELECT * FROM forum_threads WHERE id = ? AND project_id = ?').get(req.params.threadId, req.params.projectId)
-  if (!row) return next(notFound('Thread not found'))
+  if (!row) return next(notFound("We couldn't find that post — it may have been removed."))
 
   db.prepare('INSERT OR IGNORE INTO forum_upvotes (thread_id, user_id) VALUES (?, ?)').run(row.id, req.user.id)
   res.json(serializeThread(db, row))
 })
 
-const pollVoteSchema = z.object({ optionId: z.string().min(1, 'optionId is required') })
+const pollVoteSchema = z.object({ optionId: z.string().min(1, 'Please choose an option before voting.') })
 
 forumRouter.post('/:threadId/poll-vote', requireAuth, requireMembership, validate(pollVoteSchema), (req, res, next) => {
   const db = getDb()
   const thread = db.prepare('SELECT * FROM forum_threads WHERE id = ? AND project_id = ?').get(req.params.threadId, req.params.projectId)
-  if (!thread) return next(notFound('Thread not found'))
+  if (!thread) return next(notFound("We couldn't find that post — it may have been removed."))
 
   const pollRow = db.prepare('SELECT * FROM thread_polls WHERE thread_id = ?').get(thread.id)
-  if (!pollRow) return next(badRequest('This thread does not have a poll'))
+  if (!pollRow) return next(badRequest("This post doesn't have a poll to vote on."))
 
   const option = db.prepare('SELECT * FROM thread_poll_options WHERE id = ? AND poll_id = ?').get(req.body.optionId, pollRow.id)
-  if (!option) return next(badRequest('Unknown poll option'))
+  if (!option) return next(badRequest("That poll option is no longer available. Please refresh and try again."))
 
   db.prepare('INSERT OR IGNORE INTO thread_poll_votes (poll_id, user_id, option_id) VALUES (?, ?, ?)').run(pollRow.id, req.user.id, option.id)
   res.json(serializeThread(db, thread))
@@ -146,8 +192,8 @@ forumRouter.post('/:threadId/poll-vote', requireAuth, requireMembership, validat
 forumRouter.delete('/:threadId', requireAuth, requireMembership, (req, res, next) => {
   const db = getDb()
   const thread = db.prepare('SELECT * FROM forum_threads WHERE id = ? AND project_id = ?').get(req.params.threadId, req.params.projectId)
-  if (!thread) return next(notFound('Thread not found'))
-  if (thread.author_user_id !== req.user.id && req.user.role !== 'admin') return next(forbidden())
+  if (!thread) return next(notFound("We couldn't find that post — it may have been removed."))
+  if (thread.author_user_id !== req.user.id && req.user.role !== 'admin') return next(forbidden('You can only delete your own posts.'))
 
   db.transaction(() => {
     const poll = db.prepare('SELECT id FROM thread_polls WHERE thread_id = ?').get(thread.id)

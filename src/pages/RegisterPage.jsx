@@ -30,8 +30,20 @@ export default function RegisterPage() {
   const update = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }))
 
   const submitRegistration = async () => {
-    if (!form.name || !form.email || !form.projectId || !form.unit) {
-      setError('Please fill in all fields.')
+    // Names the fields that are actually missing — "fill in all fields" sent
+    // people hunting through the form, and phone isn't required here anyway.
+    const missing = [
+      [!form.name, 'your full name'],
+      [!form.email, 'your email'],
+      [!form.projectId, 'your property project'],
+      [!form.unit, 'your unit / lot number']
+    ].filter(([isMissing]) => isMissing).map(([, label]) => label)
+
+    if (missing.length) {
+      const list = missing.length === 1
+        ? missing[0]
+        : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`
+      setError(`Please add ${list} to continue.`)
       return
     }
     setError('')
@@ -40,8 +52,20 @@ export default function RegisterPage() {
 
   const submitDocument = async () => {
     setError('')
+    // Both conditions are checked here rather than by disabling the button, so a
+    // resident who taps it always learns what's still outstanding. The consent
+    // check is also the real gate: PDPA requires explicit consent before the
+    // document is submitted, so it must not depend on the button's disabled state.
+    if (attachments.length === 0 && !docConsentChecked) {
+      setError(`Please upload your ${docByTier[form.tier]} and tick the consent box to continue.`)
+      return
+    }
     if (attachments.length === 0) {
-      setError('Please upload your proof document to continue.')
+      setError(`Please upload your ${docByTier[form.tier]} to continue.`)
+      return
+    }
+    if (!docConsentChecked) {
+      setError('Please tick the consent box so we can review your document.')
       return
     }
     try {
@@ -54,7 +78,7 @@ export default function RegisterPage() {
       setApplication(app)
       setStep(2)
     } catch (e) {
-      setError(e.message)
+      setError(e.message || "We couldn't submit your application just now. Please try again.")
     }
   }
 
@@ -101,12 +125,21 @@ export default function RegisterPage() {
             <Link to="/privacy" style={{ color: C.blue }} onClick={e => e.stopPropagation()}>Privacy Policy</Link>.
           </label>
 
-          {error && <div style={{ color: C.danger, fontSize: 13, marginTop: 10 }}>{error}</div>}
+          {error && <div role="alert" style={{ color: C.danger, fontSize: 13, marginTop: 10 }}>{error}</div>}
 
+          {/* Left clickable on purpose. A greyed-out button that silently does
+              nothing is the worst outcome for the residents this is built for —
+              tapping it should always explain what's missing. */}
           <button
-            style={{ ...button('primary'), marginTop: 16, opacity: tncChecked ? 1 : 0.5, cursor: tncChecked ? 'pointer' : 'not-allowed' }}
-            disabled={!tncChecked}
-            onClick={() => { setError(''); setTncAccepted(true) }}
+            style={{ ...button('primary'), marginTop: 16 }}
+            onClick={() => {
+              if (!tncChecked) {
+                setError('Please tick the box to confirm you have read and agree to the Terms & Conditions.')
+                return
+              }
+              setError('')
+              setTncAccepted(true)
+            }}
           >
             Agree & continue
           </button>
@@ -165,7 +198,7 @@ export default function RegisterPage() {
                 </select>
               </Field>
             </div>
-            {error && <div style={{ color: C.danger, fontSize: 13 }}>{error}</div>}
+            {error && <div role="alert" style={{ color: C.danger, fontSize: 13 }}>{error}</div>}
             <button style={button('primary')} onClick={submitRegistration}>Continue</button>
           </div>
         )}
@@ -210,16 +243,10 @@ export default function RegisterPage() {
               outside Malaysia), and I understand it will be permanently deleted within 14 days of review.
             </label>
 
-            {error && <div style={{ color: C.danger, fontSize: 13 }}>{error}</div>}
-            <button
-              style={{
-                ...button('primary'),
-                opacity: docConsentChecked && attachments.length > 0 ? 1 : 0.5,
-                cursor: docConsentChecked && attachments.length > 0 ? 'pointer' : 'not-allowed'
-              }}
-              disabled={!docConsentChecked || attachments.length === 0}
-              onClick={submitDocument}
-            >
+            {error && <div role="alert" style={{ color: C.danger, fontSize: 13 }}>{error}</div>}
+            {/* Clickable even when incomplete — submitDocument names what's
+                missing. See the note on the Terms & Conditions button above. */}
+            <button style={button('primary')} onClick={submitDocument}>
               Submit for review
             </button>
           </div>

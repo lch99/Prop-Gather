@@ -6,6 +6,10 @@ export const MAX_FILE_MB = 5
 export const MAX_TOTAL_MB = 10
 const ACCEPT = 'image/*,.pdf,.doc,.docx'
 
+// Size errors name the actual size so "too big" is actionable rather than abstract.
+const formatMb = (bytes) => (bytes / (1024 * 1024)).toFixed(1)
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+
 const readFile = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader()
   reader.onload = () => resolve({ name: file.name, type: file.type, size: file.size, dataUrl: reader.result })
@@ -22,25 +26,35 @@ export function useAttachments(max = MAX_FILES) {
     setError('')
     const files = Array.from(fileList)
     if (attachments.length + files.length > max) {
-      setError(`You can attach up to ${max} files.`)
+      const room = max - attachments.length
+      // Three different situations, three different things to tell them: nothing
+      // attached yet (state the cap), some room left (state the room), full
+      // (tell them to remove one — "you can add 0 more" is not an instruction).
+      setError(
+        room === 0
+          ? `You've already attached the maximum of ${plural(max, 'file')}. Remove one to add another.`
+          : attachments.length === 0
+            ? `You can attach up to ${plural(max, 'file')} here.`
+            : `You can only add ${plural(room, 'more file')} — ${plural(max, 'file')} in total.`
+      )
       return
     }
     const tooBig = files.find(f => f.size > MAX_FILE_MB * 1024 * 1024)
     if (tooBig) {
-      setError(`"${tooBig.name}" is over ${MAX_FILE_MB} MB. Please attach a smaller file.`)
+      setError(`"${tooBig.name}" is ${formatMb(tooBig.size)} MB — files need to be under ${MAX_FILE_MB} MB. Please pick a smaller one.`)
       return
     }
     const existingBytes = attachments.reduce((sum, a) => sum + (a.size || 0), 0)
     const newBytes = files.reduce((sum, f) => sum + f.size, 0)
     if (existingBytes + newBytes > MAX_TOTAL_MB * 1024 * 1024) {
-      setError(`Total attachments cannot exceed ${MAX_TOTAL_MB} MB.`)
+      setError(`Your files add up to ${formatMb(existingBytes + newBytes)} MB — the total needs to stay under ${MAX_TOTAL_MB} MB. Please remove one or pick smaller files.`)
       return
     }
     try {
       const read = await Promise.all(files.map(readFile))
       setAttachments(a => [...a, ...read])
     } catch {
-      setError('Could not read one of the files. Please try again.')
+      setError("We couldn't open one of those files. Please try attaching it again.")
     }
   }
 
@@ -73,7 +87,7 @@ export function AttachmentPicker({ attachments, addFiles, removeAttachment, erro
         </label>
         {!compact && (
           <div style={{ marginTop: 5, fontSize: 12, color: C.textFaint }}>
-            Up to {max} files · {MAX_FILE_MB} MB per file · {MAX_TOTAL_MB} MB total
+            Up to {plural(max, 'file')} · {MAX_FILE_MB} MB per file · {MAX_TOTAL_MB} MB total
           </div>
         )}
       </div>

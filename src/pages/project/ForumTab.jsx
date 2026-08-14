@@ -4,6 +4,7 @@ import { C, card, button, badge } from '../../theme'
 import { useAuth } from '../../auth'
 import { AuthorLine } from '../../components/Badges'
 import { useAttachments, AttachmentPicker, AttachmentList } from '../../components/Attachments'
+import SensitiveContentNotice, { hasSensitiveContent } from '../../components/SensitiveContentNotice'
 import PollView from '../../components/PollView'
 
 const categories = [
@@ -26,6 +27,9 @@ export default function ForumTab({ projectId }) {
   const [showNew, setShowNew] = useState(false)
   const [newThread, setNewThread] = useState({ category: categories[0], title: '', body: '' })
   const [poll, setPoll] = useState(null) // null = no poll; { question, options: [str, ...] }
+  const [editingId, setEditingId] = useState(null) // thread id currently open in the inline editor
+  const [editDraft, setEditDraft] = useState({ title: '', body: '' })
+  const [editError, setEditError] = useState('')
   const { attachments, addFiles, removeAttachment, error: uploadError, reset: resetAttachments } = useAttachments()
 
   const load = () => api.getForum(projectId).then(setThreads)
@@ -33,6 +37,9 @@ export default function ForumTab({ projectId }) {
   useEffect(() => { load() }, [projectId])
 
   const filtered = category === 'All' ? threads : threads.filter(t => t.category === category)
+
+  const blockedByPii = hasSensitiveContent(newThread.title, newThread.body)
+  const editBlocked = hasSensitiveContent(editDraft.title, editDraft.body)
 
   const upvote = async (threadId) => {
     const updated = await api.upvoteThread(projectId, threadId)
@@ -42,6 +49,33 @@ export default function ForumTab({ projectId }) {
   const voteThreadPoll = async (threadId, optionId) => {
     const updated = await api.voteThreadPoll(projectId, threadId, optionId)
     setThreads(ts => ts.map(t => t.id === updated.id ? updated : t))
+  }
+
+  // A post can be corrected once. The allowance is deliberately small: it covers
+  // the typo you spot right after posting without letting a thread others have
+  // replied to be rewritten into something else later.
+  const startEdit = (thread) => {
+    setEditingId(thread.id)
+    setEditDraft({ title: thread.title, body: thread.body })
+    setEditError('')
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditError('')
+  }
+
+  const saveEdit = async (threadId) => {
+    if (!editDraft.title.trim() || !editDraft.body.trim()) return
+    if (editBlocked) return
+    try {
+      await api.editThread(projectId, threadId, editDraft)
+      setEditingId(null)
+      setEditError('')
+      load()
+    } catch (err) {
+      setEditError(err.message)
+    }
   }
 
   // You can remove your own post — this is the PDPA right to have content
@@ -62,6 +96,7 @@ export default function ForumTab({ projectId }) {
 
   const submit = async () => {
     if (!newThread.title || !newThread.body) return
+    if (hasSensitiveContent(newThread.title, newThread.body)) return
     let pollPayload = null
     if (poll) {
       const options = poll.options.map(o => o.trim()).filter(Boolean)
@@ -126,6 +161,8 @@ export default function ForumTab({ projectId }) {
               style={{ padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 14, resize: 'vertical' }}
             />
 
+            <SensitiveContentNotice values={[newThread.title, newThread.body]} />
+
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
               <AttachmentPicker
                 attachments={attachments}
@@ -147,7 +184,13 @@ export default function ForumTab({ projectId }) {
                   📊 Add a poll
                 </button>
               )}
-              <button style={button('primary')} onClick={submit}>Post</button>
+              <button
+                style={{ ...button('primary'), ...(blockedByPii ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+                onClick={submit}
+                disabled={blockedByPii}
+              >
+                Post
+              </button>
             </div>
             <div style={{ fontSize: 12, color: C.textFaint, marginTop: -4 }}>Up to 6 files · 5 MB per file · 10 MB total</div>
 
@@ -206,8 +249,48 @@ export default function ForumTab({ projectId }) {
                 </div>
                 <span style={{ fontSize: 12, color: C.textFaint }}>{timeAgo(t.createdAt)}</span>
               </div>
-              <h3 style={{ margin: '0 0 6px', color: C.navy }}>{t.title}</h3>
-              <p style={{ margin: '0 0 10px', color: C.text, fontSize: 14 }}>{t.body}</p>
+              {editingId === t.id ? (
+                <div style={{ display: 'grid', gap: 8, marginBottom: 10 }}>
+                  <input
+                    value={editDraft.title}
+                    onChange={e => setEditDraft(d => ({ ...d, title: e.target.value }))}
+                    style={{ padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 15, fontWeight: 700, color: C.navy }}
+                  />
+                  <textarea
+                    value={editDraft.body}
+                    onChange={e => setEditDraft(d => ({ ...d, body: e.target.value }))}
+                    rows={3}
+                    style={{ padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 14, resize: 'vertical' }}
+                  />
+                  <SensitiveContentNotice values={[editDraft.title, editDraft.body]} />
+                  <div style={{ fontSize: 12, color: C.textFaint }}>
+                    You can edit a post once — after saving, this can’t be changed again.
+                  </div>
+                  {editError && <div style={{ fontSize: 13, color: C.danger }}>{editError}</div>}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      style={{ ...button('primary'), ...(editBlocked ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+                      onClick={() => saveEdit(t.id)}
+                      disabled={editBlocked}
+                    >
+                      Save edit
+                    </button>
+                    <button style={button('outline')} onClick={cancelEdit}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h3 style={{ margin: '0 0 6px', color: C.navy }}>{t.title}</h3>
+                  <p style={{ margin: '0 0 10px', color: C.text, fontSize: 14 }}>
+                    {t.body}
+                    {t.editedAt && (
+                      <span style={{ color: C.textFaint, fontSize: 12, marginLeft: 6 }} title={`Edited ${new Date(t.editedAt).toLocaleString('en-MY')}`}>
+                        (edited)
+                      </span>
+                    )}
+                  </p>
+                </>
+              )}
               <AttachmentList attachments={t.attachments} style={{ marginBottom: 10 }} />
               {t.poll && (
                 <div style={{ border: `1px solid ${C.border}`, borderRadius: C.radiusSm, padding: 14, marginBottom: 10, background: C.bg }}>
@@ -221,14 +304,26 @@ export default function ForumTab({ projectId }) {
                     ▲ {t.upvotes}
                   </button>
                   <span>💬 {t.replies}</span>
-                  {t.author?.name === user?.name && (
-                    <button
-                      onClick={() => deleteThread(t.id)}
-                      title="Delete your post"
-                      style={{ border: 'none', background: 'none', color: C.danger, fontSize: 13, cursor: 'pointer', padding: 0 }}
-                    >
-                      🗑️
-                    </button>
+                  {t.author?.name === user?.name && editingId !== t.id && (
+                    <>
+                      {/* One edit per post — once spent, only delete remains. */}
+                      {!t.editedAt && (
+                        <button
+                          onClick={() => startEdit(t)}
+                          title="Edit your post (once only)"
+                          style={{ border: 'none', background: 'none', color: C.blue, fontSize: 13, cursor: 'pointer', padding: 0 }}
+                        >
+                          ✏️
+                        </button>
+                      )}
+                      <button
+                        onClick={() => deleteThread(t.id)}
+                        title="Delete your post"
+                        style={{ border: 'none', background: 'none', color: C.danger, fontSize: 13, cursor: 'pointer', padding: 0 }}
+                      >
+                        🗑️
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

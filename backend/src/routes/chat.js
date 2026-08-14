@@ -4,7 +4,8 @@ import { getDb } from '../db/index.js'
 import { id } from '../util/ids.js'
 import { validate } from '../middleware/validate.js'
 import { requireAuth, requireMembership } from '../middleware/auth.js'
-import { badRequest, notFound, forbidden } from '../util/errors.js'
+import { blockSensitiveContent } from '../middleware/sensitiveContent.js'
+import { badRequest, notFound, forbidden, conflict } from '../util/errors.js'
 import { recordAudit } from '../util/audit.js'
 
 export const chatRouter = Router({ mergeParams: true })
@@ -16,7 +17,7 @@ chatRouter.get('/channels', requireAuth, requireMembership, (_req, res) => {
 })
 
 function requireValidChannel(req, _res, next) {
-  if (!CHANNELS.includes(req.params.channel)) return next(badRequest('Unknown channel'))
+  if (!CHANNELS.includes(req.params.channel)) return next(badRequest("That chat channel doesn't exist. Please pick one from the list."))
   next()
 }
 
@@ -47,6 +48,7 @@ function serializeMessage(db, row, projectId) {
     verified: true,
     text: row.text,
     attachments: JSON.parse(row.attachments),
+    editedAt: row.edited_at || null,
     time: new Date(row.created_at).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false })
   }
 }
@@ -57,7 +59,7 @@ chatRouter.get('/:channel/messages', requireAuth, requireMembership, requireVali
   res.json(rows.map(r => serializeMessage(db, r, req.params.projectId)))
 })
 
-chatRouter.post('/:channel/messages', requireAuth, requireMembership, requireValidChannel, validate(sendSchema), (req, res) => {
+chatRouter.post('/:channel/messages', requireAuth, requireMembership, requireValidChannel, validate(sendSchema), blockSensitiveContent('text'), (req, res) => {
   const db = getDb()
   const { text, attachments } = req.body
   const msgId = id('msg')
@@ -74,12 +76,43 @@ chatRouter.post('/:channel/messages', requireAuth, requireMembership, requireVal
 
 // Lets a resident remove their own message (or an admin remove any message) —
 // same PDPA rationale as forum thread deletion (see forum.js).
+const editSchema = z.object({
+  text: z.string().trim().min(1, 'Message cannot be empty').max(2000)
+})
+
+// One edit, sender only — same reasoning as forum threads (see forum.js).
+// Attachments aren't editable; a message whose file was wrong should be deleted
+// and resent rather than have different bytes appear under the same message.
+chatRouter.patch('/:channel/messages/:messageId', requireAuth, requireMembership, requireValidChannel, validate(editSchema), blockSensitiveContent('text'), (req, res, next) => {
+  const db = getDb()
+  const msg = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND project_id = ? AND channel = ?')
+    .get(req.params.messageId, req.params.projectId, req.params.channel)
+  if (!msg) return next(notFound("We couldn't find that message — it may have been deleted."))
+  if (msg.sender_user_id !== req.user.id) return next(forbidden('Only the person who sent this message can edit it.'))
+  if (msg.edited_at) return next(conflict('This message has already been edited. Messages can only be edited once.'))
+
+  db.prepare('UPDATE chat_messages SET text = ?, edited_at = ? WHERE id = ?')
+    .run(req.body.text, new Date().toISOString(), msg.id)
+
+  recordAudit(db, {
+    actorUserId: req.user.id,
+    actorRole: req.user.role,
+    action: 'chat.message_edited',
+    targetType: 'chat_message',
+    targetId: msg.id,
+    projectId: req.params.projectId,
+    metadata: { channel: req.params.channel }
+  })
+
+  res.json(serializeMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(msg.id), req.params.projectId))
+})
+
 chatRouter.delete('/:channel/messages/:messageId', requireAuth, requireMembership, requireValidChannel, (req, res, next) => {
   const db = getDb()
   const msg = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND project_id = ? AND channel = ?')
     .get(req.params.messageId, req.params.projectId, req.params.channel)
-  if (!msg) return next(notFound('Message not found'))
-  if (msg.sender_user_id !== req.user.id && req.user.role !== 'admin') return next(forbidden())
+  if (!msg) return next(notFound("We couldn't find that message — it may have been deleted."))
+  if (msg.sender_user_id !== req.user.id && req.user.role !== 'admin') return next(forbidden('You can only delete your own messages.'))
 
   db.prepare('DELETE FROM chat_messages WHERE id = ?').run(msg.id)
 

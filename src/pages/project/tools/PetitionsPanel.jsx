@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../../api'
 import { C, card, button, badge } from '../../../theme'
+import SensitiveContentNotice, { hasSensitiveContent } from '../../../components/SensitiveContentNotice'
 
 export default function PetitionsPanel({ projectId }) {
   const [petitions, setPetitions] = useState([])
@@ -17,6 +18,7 @@ export default function PetitionsPanel({ projectId }) {
 
   const create = async () => {
     if (!form.title || !form.description || !form.target) return
+    if (hasSensitiveContent(form.title, form.description)) return
     await api.createPetition(projectId, form)
     setForm({ title: '', description: '', target: 100 })
     setShowNew(false)
@@ -45,7 +47,16 @@ export default function PetitionsPanel({ projectId }) {
             Signature target
             <input type="number" min={1} value={form.target} onChange={e => setForm(f => ({ ...f, target: e.target.value }))} style={{ ...inputStyle, maxWidth: 140 }} />
           </label>
-          <div><button style={button('primary')} onClick={create}>Create petition</button></div>
+          <SensitiveContentNotice values={[form.title, form.description]} />
+          <div>
+            <button
+              style={{ ...button('primary'), ...(hasSensitiveContent(form.title, form.description) ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+              onClick={create}
+              disabled={hasSensitiveContent(form.title, form.description)}
+            >
+              Create petition
+            </button>
+          </div>
         </div>
       )}
 

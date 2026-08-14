@@ -9,7 +9,7 @@ import { auditLogRouter } from './routes/auditLog.js'
 import { communityRequestsRouter } from './routes/communityRequests.js'
 import { forumRouter } from './routes/forum.js'
 import { chatRouter } from './routes/chat.js'
-import { vendorsRouter } from './routes/vendors.js'
+import { vendorsRouter, vendorsAdminRouter } from './routes/vendors.js'
 import { petitionsRouter } from './routes/petitions.js'
 import { pollsRouter } from './routes/polls.js'
 import { defectsRouter } from './routes/defects.js'
@@ -31,6 +31,9 @@ export function createApp() {
   app.use('/api/applications', applicationsRouter)
   app.use('/api/audit-log', auditLogRouter)
   app.use('/api/community-requests', communityRequestsRouter)
+  // Global vendor directory management — see the comment in routes/vendors.js
+  // for why this isn't under /api/projects/:projectId/vendors.
+  app.use('/api/vendors', vendorsAdminRouter)
 
   app.use('/api/projects/:projectId/forum', requireProjectExists, forumRouter)
   app.use('/api/projects/:projectId/chat', requireProjectExists, chatRouter)
@@ -42,7 +45,7 @@ export function createApp() {
   app.use('/api/projects/:projectId/references', requireProjectExists, referencesRouter)
   app.use('/api/projects/:projectId/fees', requireProjectExists, feesRouter)
 
-  app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }))
+  app.use('/api', (_req, res) => res.status(404).json({ error: "We couldn't find that page or action." }))
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, _req, res, _next) => {
@@ -51,8 +54,12 @@ export function createApp() {
       // eslint-disable-next-line no-console
       console.error(err)
     }
+    // Never leak an internal exception message to a resident — 5xx messages are
+    // written for developers (and already logged above), so send a plain one.
     res.status(status).json({
-      error: err.message || 'Internal server error',
+      error: status >= 500
+        ? 'Something went wrong on our end. Please try again in a moment.'
+        : (err.message || 'Something went wrong. Please try again.'),
       ...(err.details ? { details: err.details } : {})
     })
   })

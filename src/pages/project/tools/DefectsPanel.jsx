@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../../api'
 import { C, card, button, badge } from '../../../theme'
 import { useAttachments, AttachmentPicker, AttachmentList } from '../../../components/Attachments'
+import SensitiveContentNotice, { hasSensitiveContent } from '../../../components/SensitiveContentNotice'
 
 const statusStyle = (status) => {
   if (status === 'Open') return badge(C.danger, C.dangerBg)
@@ -21,6 +22,7 @@ export default function DefectsPanel({ projectId, project }) {
 
   const create = async () => {
     if (!form.title || !form.description) return
+    if (hasSensitiveContent(form.title, form.description)) return
     await api.createDefect(projectId, { ...form, attachments })
     setForm({ title: '', block: '', floorRange: '', unit: '', category: 'General', description: '' })
     resetAttachments()
@@ -66,7 +68,16 @@ export default function DefectsPanel({ projectId, project }) {
               label="Add photos of the defect"
             />
           </div>
-          <div><button style={button('primary')} onClick={create}>Submit</button></div>
+          <SensitiveContentNotice values={[form.title, form.description]} />
+          <div>
+            <button
+              style={{ ...button('primary'), ...(hasSensitiveContent(form.title, form.description) ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+              onClick={create}
+              disabled={hasSensitiveContent(form.title, form.description)}
+            >
+              Submit
+            </button>
+          </div>
         </div>
       )}
 
