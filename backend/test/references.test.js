@@ -6,7 +6,7 @@ let residentToken
 let adminToken
 
 beforeEach(async () => {
-  app = freshApp()
+  app = await freshApp()
   residentToken = await login(app, RESIDENT.email, RESIDENT.password)
   adminToken = await login(app, ADMIN.email, ADMIN.password)
 })

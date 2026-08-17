@@ -6,6 +6,7 @@ import { validate } from '../middleware/validate.js'
 import { requireAuth, requireMembership, requireRole } from '../middleware/auth.js'
 import { notFound } from '../util/errors.js'
 import { toReference } from '../util/serialize.js'
+import { wrap } from '../util/asyncHandler.js'
 
 export const referencesRouter = Router({ mergeParams: true })
 
@@ -28,30 +29,30 @@ const createSchema = z.object({
   attachments: z.array(attachmentSchema).max(6).optional().default([])
 })
 
-referencesRouter.get('/', requireAuth, requireMembership, (req, res) => {
-  const rows = getDb().prepare('SELECT * FROM references_ WHERE project_id = ? ORDER BY date DESC').all(req.params.projectId)
+referencesRouter.get('/', requireAuth, requireMembership, wrap(async (req, res) => {
+  const rows = await getDb().all('SELECT * FROM references_ WHERE project_id = ? ORDER BY date DESC', [req.params.projectId])
   res.json(rows.map(toReference))
-})
+}))
 
-referencesRouter.post('/', requireAuth, requireRole('admin'), validate(createSchema), (req, res) => {
+referencesRouter.post('/', requireAuth, requireRole('admin'), validate(createSchema), wrap(async (req, res) => {
   const db = getDb()
   const refId = id('ref')
   const { type, title, description, date, attachments } = req.body
   const progress = type === PROGRESS_TYPE ? (req.body.progress ?? null) : null
 
-  db.prepare(`
+  await db.run(`
     INSERT INTO references_ (id, project_id, type, title, description, date, uploaded_by, progress, attachments)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(refId, req.params.projectId, type, title, description, date, req.user.name, progress, JSON.stringify(attachments))
+  `, [refId, req.params.projectId, type, title, description, date, req.user.name, progress, JSON.stringify(attachments)])
 
-  const row = db.prepare('SELECT * FROM references_ WHERE id = ?').get(refId)
+  const row = await db.get('SELECT * FROM references_ WHERE id = ?', [refId])
   res.status(201).json(toReference(row))
-})
+}))
 
-referencesRouter.delete('/:refId', requireAuth, requireRole('admin'), (req, res, next) => {
+referencesRouter.delete('/:refId', requireAuth, requireRole('admin'), wrap(async (req, res, next) => {
   const db = getDb()
-  const row = db.prepare('SELECT * FROM references_ WHERE id = ? AND project_id = ?').get(req.params.refId, req.params.projectId)
+  const row = await db.get('SELECT * FROM references_ WHERE id = ? AND project_id = ?', [req.params.refId, req.params.projectId])
   if (!row) return next(notFound("We couldn't find that contact — it may have been removed."))
-  db.prepare('DELETE FROM references_ WHERE id = ?').run(row.id)
+  await db.run('DELETE FROM references_ WHERE id = ?', [row.id])
   res.json({ ok: true })
-})
+}))

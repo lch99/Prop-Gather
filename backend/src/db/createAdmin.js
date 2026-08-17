@@ -16,7 +16,8 @@
 // If the email already exists, the account is promoted to admin and its
 // password reset when one is supplied. That's the intended flow: register
 // through the normal signup form like any resident, then promote yourself.
-import { getDb } from './index.js'
+import { getDb, closeDb } from './index.js'
+import { runMigrations } from './migrate.js'
 import { hashPassword } from '../util/auth.js'
 import { recordAudit } from '../util/audit.js'
 import { id } from '../util/ids.js'
@@ -41,20 +42,20 @@ function fail(message) {
   process.exit(1)
 }
 
-export function createAdmin({ email, name, password }) {
+export async function createAdmin({ email, name, password }) {
   const db = getDb()
-  const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(email)
+  const existing = await db.get('SELECT * FROM users WHERE email = ?', [email])
 
   if (existing) {
     if (existing.role === 'admin' && !password) {
       return { action: 'unchanged', userId: existing.id, name: existing.name }
     }
-    db.prepare(`
-      UPDATE users SET role = 'admin'${password ? ', password_hash = @passwordHash' : ''}
-      WHERE id = @userId
-    `).run({ userId: existing.id, ...(password ? { passwordHash: hashPassword(password) } : {}) })
+    await db.run(
+      `UPDATE users SET role = 'admin'${password ? ', password_hash = :passwordHash' : ''} WHERE id = :userId`,
+      { userId: existing.id, ...(password ? { passwordHash: hashPassword(password) } : {}) }
+    )
 
-    recordAudit(db, {
+    await recordAudit(db, {
       actorRole: 'system',
       action: 'user.admin_granted',
       targetType: 'user',
@@ -68,12 +69,12 @@ export function createAdmin({ email, name, password }) {
   if (!password) fail('a password is required when creating a new account (set ADMIN_PASSWORD or pass --password)')
 
   const userId = id('usr')
-  db.prepare(`
+  await db.run(`
     INSERT INTO users (id, name, email, password_hash, role, created_at)
-    VALUES (@userId, @name, @email, @passwordHash, 'admin', @createdAt)
-  `).run({ userId, name, email, passwordHash: hashPassword(password), createdAt: new Date().toISOString() })
+    VALUES (:userId, :name, :email, :passwordHash, 'admin', :createdAt)
+  `, { userId, name, email, passwordHash: hashPassword(password), createdAt: new Date().toISOString() })
 
-  recordAudit(db, {
+  await recordAudit(db, {
     actorRole: 'system',
     action: 'user.admin_created',
     targetType: 'user',
@@ -83,7 +84,7 @@ export function createAdmin({ email, name, password }) {
   return { action: 'created', userId, name }
 }
 
-function main() {
+async function main() {
   const args = parseArgs(process.argv.slice(2))
   const email = (args.email || '').trim().toLowerCase()
   const name = (args.name || '').trim()
@@ -104,7 +105,11 @@ function main() {
     }
   }
 
-  const result = createAdmin({ email, name, password })
+  // Migrations run first so this works against a database the server has never
+  // started against — bootstrapping the first admin is often the very first
+  // thing done on a fresh deploy.
+  await runMigrations()
+  const result = await createAdmin({ email, name, password })
 
   // Never echo the password back, not even masked — this output is what ends
   // up in deploy logs and terminal scrollback.
@@ -114,9 +119,13 @@ function main() {
   if (result.action === 'unchanged') {
     console.log('    (already an admin; pass a password to reset it)\n')
   }
+  await closeDb()
 }
 
 // Only run when invoked directly, so tests can import createAdmin().
 if (process.argv[1] && process.argv[1].endsWith('createAdmin.js')) {
-  main()
+  main().catch(err => {
+    console.error(`\n  ✗ ${err.message}\n`)
+    process.exit(1)
+  })
 }

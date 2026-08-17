@@ -6,7 +6,7 @@ import { freshApp, authed, login, sampleDocumentFile } from './helpers.js'
 import { s3Mock } from './setup.js'
 
 let app
-beforeEach(() => { app = freshApp() })
+beforeEach(async () => { app = await freshApp() })
 
 async function decidedApplication(email, decision, { daysAgo = 0 } = {}) {
   const reg = await request(app).post('/api/auth/register').send({ name: 'Applicant', email, password: 'password123' })
@@ -22,7 +22,7 @@ async function decidedApplication(email, decision, { daysAgo = 0 } = {}) {
 
   if (daysAgo > 0) {
     const backdated = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString()
-    getDb().prepare('UPDATE applications SET decided_at = ? WHERE id = ?').run(backdated, created.body.id)
+    await getDb().run('UPDATE applications SET decided_at = ? WHERE id = ?', [backdated, created.body.id])
   }
 
   return { id: created.body.id, documentFile }
@@ -34,7 +34,7 @@ describe('purgeApplications', () => {
     const result = await purgeApplications()
     expect(result.purged).toBe(0)
 
-    const row = getDb().prepare('SELECT * FROM applications WHERE id = ?').get(id)
+    const row = await getDb().get('SELECT * FROM applications WHERE id = ?', [id])
     expect(row.document_file).toBeTruthy()
     expect(row.document_purged_at).toBeNull()
   })
@@ -44,7 +44,7 @@ describe('purgeApplications', () => {
     const result = await purgeApplications()
     expect(result.purged).toBe(1)
 
-    const row = getDb().prepare('SELECT * FROM applications WHERE id = ?').get(id)
+    const row = await getDb().get('SELECT * FROM applications WHERE id = ?', [id])
     expect(row.document_file).toBeNull()
     expect(row.document_purged_at).toBeTruthy()
     // the rest of the record — the "non-reversible record that a document was verified" — survives
@@ -59,7 +59,7 @@ describe('purgeApplications', () => {
     const result = await purgeApplications()
     expect(result.purged).toBe(1)
 
-    const row = getDb().prepare('SELECT * FROM applications WHERE id = ?').get(id)
+    const row = await getDb().get('SELECT * FROM applications WHERE id = ?', [id])
     expect(row.document_file).toBeNull()
     expect(row.status).toBe('Rejected')
   })
@@ -70,12 +70,12 @@ describe('purgeApplications', () => {
       projectId: 'p2', unit: 'P-1', tier: 'Owner', document: 'SPA', documentFile: sampleDocumentFile(), consent: true
     })
     // Backdate submitted_at far in the past — pending applications have no decided_at and must never be purged.
-    getDb().prepare('UPDATE applications SET submitted_at = ? WHERE id = ?')
-      .run(new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(), created.body.id)
+    await getDb().run('UPDATE applications SET submitted_at = ? WHERE id = ?',
+      [new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(), created.body.id])
 
     const result = await purgeApplications()
     expect(result.purged).toBe(0)
-    const row = getDb().prepare('SELECT * FROM applications WHERE id = ?').get(created.body.id)
+    const row = await getDb().get('SELECT * FROM applications WHERE id = ?', [created.body.id])
     expect(row.document_file).toBeTruthy()
   })
 

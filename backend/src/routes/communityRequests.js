@@ -6,6 +6,7 @@ import { validate } from '../middleware/validate.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { notFound } from '../util/errors.js'
 import { recordAudit } from '../util/audit.js'
+import { wrap } from '../util/asyncHandler.js'
 
 export const communityRequestsRouter = Router()
 
@@ -17,20 +18,20 @@ const schema = z.object({
   note: z.string().trim().max(2000).optional().default('')
 })
 
-communityRequestsRouter.post('/', validate(schema), (req, res) => {
+communityRequestsRouter.post('/', validate(schema), wrap(async (req, res) => {
   const { name, city, state, developer, note } = req.body
-  getDb().prepare(`
+  await getDb().run(`
     INSERT INTO community_requests (id, name, email, project_name, city, state, message, created_at)
     VALUES (?, ?, NULL, ?, ?, ?, ?, ?)
-  `).run(id('creq'), name, name, city, state, [developer, note].filter(Boolean).join(' — '), new Date().toISOString())
+  `, [id('creq'), name, name, city, state, [developer, note].filter(Boolean).join(' — '), new Date().toISOString()])
   res.status(201).json({ ok: true })
-})
+}))
 
 // The submit route above is public and unauthenticated, so without this the
 // requests were write-only — nothing on the platform could read them back and
 // every "please add my community" submission was silently unreachable.
-communityRequestsRouter.get('/', requireAuth, requireRole('admin'), (_req, res) => {
-  const rows = getDb().prepare('SELECT * FROM community_requests ORDER BY created_at DESC').all()
+communityRequestsRouter.get('/', requireAuth, requireRole('admin'), wrap(async (_req, res) => {
+  const rows = await getDb().all('SELECT * FROM community_requests ORDER BY created_at DESC')
   res.json(rows.map(r => ({
     id: r.id,
     name: r.project_name,
@@ -39,16 +40,16 @@ communityRequestsRouter.get('/', requireAuth, requireRole('admin'), (_req, res) 
     message: r.message || '',
     createdAt: r.created_at
   })))
-})
+}))
 
-communityRequestsRouter.delete('/:id', requireAuth, requireRole('admin'), (req, res, next) => {
+communityRequestsRouter.delete('/:id', requireAuth, requireRole('admin'), wrap(async (req, res, next) => {
   const db = getDb()
-  const row = db.prepare('SELECT * FROM community_requests WHERE id = ?').get(req.params.id)
+  const row = await db.get('SELECT * FROM community_requests WHERE id = ?', [req.params.id])
   if (!row) return next(notFound("We couldn't find that community request."))
 
-  db.prepare('DELETE FROM community_requests WHERE id = ?').run(row.id)
+  await db.run('DELETE FROM community_requests WHERE id = ?', [row.id])
 
-  recordAudit(db, {
+  await recordAudit(db, {
     actorUserId: req.user.id,
     actorRole: req.user.role,
     action: 'community_request.deleted',
@@ -58,4 +59,4 @@ communityRequestsRouter.delete('/:id', requireAuth, requireRole('admin'), (req, 
   })
 
   res.json({ ok: true })
-})
+}))

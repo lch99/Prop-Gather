@@ -3,7 +3,7 @@ import request from 'supertest'
 import { freshApp, login, authed, outsider, ADMIN } from './helpers.js'
 
 let app
-beforeEach(() => { app = freshApp() })
+beforeEach(async () => { app = await freshApp() })
 
 const newCommunity = (over = {}) => ({
   name: 'Harmony Park Residences',

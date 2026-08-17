@@ -3,7 +3,7 @@ import request from 'supertest'
 import { freshApp, authed, login, loginWithId, ADMIN, sampleDocumentFile } from './helpers.js'
 
 let app
-beforeEach(() => { app = freshApp() })
+beforeEach(async () => { app = await freshApp() })
 
 async function registerUser(app, email) {
   const res = await request(app).post('/api/auth/register').send({ name: 'Applicant', email, password: 'password123' })

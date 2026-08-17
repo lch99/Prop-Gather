@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { getDb } from '../db/index.js'
+import { getDb, withTransaction } from '../db/index.js'
 import { id } from '../util/ids.js'
 import { validate } from '../middleware/validate.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
@@ -8,6 +8,7 @@ import { badRequest, notFound, conflict, forbidden } from '../util/errors.js'
 import { toApplication } from '../util/serialize.js'
 import { buildDocumentKey, createUploadUrl, createDownloadUrl, headObject, deleteObject, describeStorageDestination } from '../util/s3.js'
 import { recordAudit } from '../util/audit.js'
+import { wrap } from '../util/asyncHandler.js'
 
 // Applications joined with the deciding admin's name (for decidedByName) — used
 // everywhere an application row is read so accountability is visible wherever
@@ -67,41 +68,33 @@ const uploadUrlSchema = z.object({
 // Step 1 of the upload flow: client asks for a presigned S3 PUT URL, uploads the
 // file bytes directly to S3 (never through this server), then submits the
 // returned `key` as documentFile.key in POST /.
-applicationsRouter.post('/upload-url', requireAuth, validate(uploadUrlSchema), async (req, res, next) => {
+applicationsRouter.post('/upload-url', requireAuth, validate(uploadUrlSchema), wrap(async (req, res, next) => {
   const { fileType } = req.body
   if (!ALLOWED_DOCUMENT_TYPES.has(fileType)) return next(badRequest('That file type isn\'t supported. Please upload a photo (JPG or PNG) or a PDF.'))
 
-  try {
-    const key = buildDocumentKey(req.user.id)
-    const uploadUrl = await createUploadUrl(key, fileType)
-    res.json({ key, uploadUrl, expiresIn: 300 })
-  } catch (err) {
-    next(err)
-  }
-})
+  const key = buildDocumentKey(req.user.id)
+  const uploadUrl = await createUploadUrl(key, fileType)
+  res.json({ key, uploadUrl, expiresIn: 300 })
+}))
 
-applicationsRouter.post('/', requireAuth, validate(createSchema), async (req, res, next) => {
+applicationsRouter.post('/', requireAuth, validate(createSchema), wrap(async (req, res, next) => {
   const { projectId, unit, tier, document, documentFile, phone } = req.body
   const db = getDb()
 
-  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId)
+  const project = await db.get('SELECT id FROM projects WHERE id = ?', [projectId])
   if (!project) return next(badRequest('We couldn\'t find that community. Please pick your property project from the list again.'))
 
-  const alreadyMember = db.prepare('SELECT 1 FROM community_memberships WHERE user_id = ? AND project_id = ?').get(req.user.id, projectId)
+  const alreadyMember = await db.get('SELECT 1 FROM community_memberships WHERE user_id = ? AND project_id = ?', [req.user.id, projectId])
   if (alreadyMember) return next(conflict('You are already a verified member of this community'))
 
-  const pending = db.prepare("SELECT 1 FROM applications WHERE user_id = ? AND project_id = ? AND status = 'Pending'").get(req.user.id, projectId)
+  const pending = await db.get("SELECT 1 FROM applications WHERE user_id = ? AND project_id = ? AND status = 'Pending'", [req.user.id, projectId])
   if (pending) return next(conflict('You already have a pending application for this community'))
 
-  try {
-    const head = await headObject(documentFile.key)
-    if (!head) return next(badRequest('We couldn\'t find your uploaded file. Please attach it again.'))
-    if (head.ContentLength > MAX_DOCUMENT_MB * 1024 * 1024) {
-      await deleteObject(documentFile.key).catch(() => {})
-      return next(badRequest(`That file is larger than ${MAX_DOCUMENT_MB} MB. Please upload a smaller file.`))
-    }
-  } catch (err) {
-    return next(err)
+  const head = await headObject(documentFile.key)
+  if (!head) return next(badRequest('We couldn\'t find your uploaded file. Please attach it again.'))
+  if (head.ContentLength > MAX_DOCUMENT_MB * 1024 * 1024) {
+    await deleteObject(documentFile.key).catch(() => {})
+    return next(badRequest(`That file is larger than ${MAX_DOCUMENT_MB} MB. Please upload a smaller file.`))
   }
 
   const now = new Date().toISOString()
@@ -120,12 +113,12 @@ applicationsRouter.post('/', requireAuth, validate(createSchema), async (req, re
     submittedAt: now,
     consentAcceptedAt: now
   }
-  db.prepare(`
+  await db.run(`
     INSERT INTO applications (id, user_id, project_id, name, email, phone, unit, tier, document, document_file, status, submitted_at, consent_accepted_at)
-    VALUES (@id, @userId, @projectId, @name, @email, @phone, @unit, @tier, @document, @documentFile, @status, @submittedAt, @consentAcceptedAt)
-  `).run(app)
+    VALUES (:id, :userId, :projectId, :name, :email, :phone, :unit, :tier, :document, :documentFile, :status, :submittedAt, :consentAcceptedAt)
+  `, app)
 
-  recordAudit(db, {
+  await recordAudit(db, {
     actorUserId: req.user.id,
     actorRole: req.user.role,
     action: 'application.submitted',
@@ -140,7 +133,7 @@ applicationsRouter.post('/', requireAuth, validate(createSchema), async (req, re
   // country/region, purpose, and evidence of the compliance basis relied on
   // (here: explicit consent, captured moments ago at consentAcceptedAt).
   const destination = describeStorageDestination()
-  recordAudit(db, {
+  await recordAudit(db, {
     actorUserId: req.user.id,
     actorRole: req.user.role,
     action: 'application.cross_border_transfer',
@@ -158,65 +151,64 @@ applicationsRouter.post('/', requireAuth, validate(createSchema), async (req, re
     }
   })
 
-  const row = db.prepare(`${SELECT_WITH_DECIDER} WHERE applications.id = ?`).get(app.id)
+  const row = await db.get(`${SELECT_WITH_DECIDER} WHERE applications.id = ?`, [app.id])
   res.status(201).json(await withDocumentUrl(row))
-})
+}))
 
-applicationsRouter.get('/mine', requireAuth, async (req, res, next) => {
-  try {
-    const rows = getDb().prepare(`${SELECT_WITH_DECIDER} WHERE applications.user_id = ? ORDER BY submitted_at DESC`).all(req.user.id)
-    res.json(await Promise.all(rows.map(withDocumentUrl)))
-  } catch (err) {
-    next(err)
-  }
-})
+applicationsRouter.get('/mine', requireAuth, wrap(async (req, res) => {
+  const rows = await getDb().all(`${SELECT_WITH_DECIDER} WHERE applications.user_id = ? ORDER BY submitted_at DESC`, [req.user.id])
+  res.json(await Promise.all(rows.map(withDocumentUrl)))
+}))
 
-applicationsRouter.get('/', requireAuth, requireRole('admin'), async (req, res, next) => {
+applicationsRouter.get('/', requireAuth, requireRole('admin'), wrap(async (req, res) => {
   const { status } = req.query
   const db = getDb()
-  try {
-    const rows = status
-      ? db.prepare(`${SELECT_WITH_DECIDER} WHERE status = ? ORDER BY submitted_at DESC`).all(status)
-      : db.prepare(`${SELECT_WITH_DECIDER} ORDER BY submitted_at DESC`).all()
+  const rows = status
+    ? await db.all(`${SELECT_WITH_DECIDER} WHERE status = ? ORDER BY submitted_at DESC`, [status])
+    : await db.all(`${SELECT_WITH_DECIDER} ORDER BY submitted_at DESC`)
 
-    recordAudit(db, {
-      actorUserId: req.user.id,
-      actorRole: req.user.role,
-      action: 'application.list_viewed',
-      targetType: 'application',
-      targetId: status || 'all',
-      metadata: { count: rows.length, ids: rows.map(r => r.id) }
-    })
+  await recordAudit(db, {
+    actorUserId: req.user.id,
+    actorRole: req.user.role,
+    action: 'application.list_viewed',
+    targetType: 'application',
+    targetId: status || 'all',
+    metadata: { count: rows.length, ids: rows.map(r => r.id) }
+  })
 
-    res.json(await Promise.all(rows.map(withDocumentUrl)))
-  } catch (err) {
-    next(err)
-  }
-})
+  res.json(await Promise.all(rows.map(withDocumentUrl)))
+}))
 
 const decisionSchema = z.object({
   decision: z.enum(['approve', 'reject'], { errorMap: () => ({ message: 'Please choose either Approve or Reject.' }) })
 })
 
-applicationsRouter.post('/:id/decision', requireAuth, requireRole('admin'), validate(decisionSchema), async (req, res, next) => {
+applicationsRouter.post('/:id/decision', requireAuth, requireRole('admin'), validate(decisionSchema), wrap(async (req, res, next) => {
   const db = getDb()
-  const app = db.prepare('SELECT * FROM applications WHERE id = ?').get(req.params.id)
+  const app = await db.get('SELECT * FROM applications WHERE id = ?', [req.params.id])
   if (!app) return next(notFound('We couldn\'t find that application.'))
   if (app.status !== 'Pending') return next(conflict(`This application has already been ${app.status.toLowerCase()}, so it can't be decided again.`))
 
   const status = req.body.decision === 'approve' ? 'Approved' : 'Rejected'
   const decidedAt = new Date().toISOString()
 
-  const run = db.transaction(() => {
-    db.prepare('UPDATE applications SET status = ?, decided_at = ?, decided_by = ? WHERE id = ?').run(status, decidedAt, req.user.id, app.id)
+  // The decision, the membership it grants, and the audit entry are one unit:
+  // an approval that recorded a decision without granting access would lock the
+  // resident out with no way to re-apply (the route rejects a second attempt as
+  // already decided).
+  await withTransaction(async (tx) => {
+    await tx.run('UPDATE applications SET status = ?, decided_at = ?, decided_by = ? WHERE id = ?', [status, decidedAt, req.user.id, app.id])
     if (status === 'Approved') {
-      db.prepare(`
+      // MySQL's upsert. SQLite spelled this ON CONFLICT(user_id, project_id) DO
+      // UPDATE SET … = excluded.…; here the UNIQUE key on (user_id, project_id)
+      // is what ON DUPLICATE KEY matches against.
+      await tx.run(`
         INSERT INTO community_memberships (id, user_id, project_id, tier, unit, verified_at)
-        VALUES (@id, @userId, @projectId, @tier, @unit, @verifiedAt)
-        ON CONFLICT(user_id, project_id) DO UPDATE SET tier = excluded.tier, unit = excluded.unit
-      `).run({ id: id('mem'), userId: app.user_id, projectId: app.project_id, tier: app.tier, unit: app.unit, verifiedAt: decidedAt })
+        VALUES (:id, :userId, :projectId, :tier, :unit, :verifiedAt)
+        ON DUPLICATE KEY UPDATE tier = VALUES(tier), unit = VALUES(unit)
+      `, { id: id('mem'), userId: app.user_id, projectId: app.project_id, tier: app.tier, unit: app.unit, verifiedAt: decidedAt })
     }
-    recordAudit(db, {
+    await recordAudit(tx, {
       actorUserId: req.user.id,
       actorRole: req.user.role,
       action: status === 'Approved' ? 'application.approved' : 'application.rejected',
@@ -226,11 +218,10 @@ applicationsRouter.post('/:id/decision', requireAuth, requireRole('admin'), vali
       metadata: { applicantUserId: app.user_id, tier: app.tier, unit: app.unit }
     })
   })
-  run()
 
-  const row = db.prepare(`${SELECT_WITH_DECIDER} WHERE applications.id = ?`).get(app.id)
+  const row = await db.get(`${SELECT_WITH_DECIDER} WHERE applications.id = ?`, [app.id])
   res.json(await withDocumentUrl(row))
-})
+}))
 
 // Residents may withdraw only while Pending — once an admin has decided, the
 // application is part of the decision record. Admins can additionally erase a
@@ -238,9 +229,9 @@ applicationsRouter.post('/:id/decision', requireAuth, requireRole('admin'), vali
 // actionable: the row holds the applicant's name, email, phone and unit, and
 // there is no other endpoint that can remove it. The retention job only clears
 // document_file, never these fields.
-applicationsRouter.delete('/:id', requireAuth, async (req, res, next) => {
+applicationsRouter.delete('/:id', requireAuth, wrap(async (req, res, next) => {
   const db = getDb()
-  const app = db.prepare('SELECT * FROM applications WHERE id = ?').get(req.params.id)
+  const app = await db.get('SELECT * FROM applications WHERE id = ?', [req.params.id])
   if (!app) return next(notFound('We couldn\'t find that application.'))
 
   const isAdmin = req.user.role === 'admin'
@@ -249,9 +240,9 @@ applicationsRouter.delete('/:id', requireAuth, async (req, res, next) => {
 
   const erasingDecided = app.status !== 'Pending'
 
-  db.prepare('DELETE FROM applications WHERE id = ?').run(app.id)
+  await db.run('DELETE FROM applications WHERE id = ?', [app.id])
 
-  recordAudit(db, {
+  await recordAudit(db, {
     actorUserId: req.user.id,
     actorRole: req.user.role,
     // A decided application being removed is an erasure of a decision record,
@@ -279,4 +270,4 @@ applicationsRouter.delete('/:id', requireAuth, async (req, res, next) => {
   }
 
   res.json({ ok: true })
-})
+}))

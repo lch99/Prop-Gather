@@ -3,7 +3,7 @@ import request from 'supertest'
 import { freshApp } from './helpers.js'
 
 let app
-beforeEach(() => { app = freshApp() })
+beforeEach(async () => { app = await freshApp() })
 
 describe('POST /api/community-requests', () => {
   it('accepts a public request with no authentication', async () => {

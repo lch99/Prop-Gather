@@ -1,7 +1,13 @@
 import { createApp } from './app.js'
-import { getDb } from './db/index.js'
+import { runMigrations } from './db/migrate.js'
 import { seed } from './db/seed.js'
 import { purgeApplications } from './jobs/purgeApplications.js'
+
+// Migrations run before the server accepts a connection. On MySQL they are a
+// series of round trips rather than an in-process call, so this is an explicit
+// await at startup instead of a side effect of the first query — a broken
+// migration fails the boot, loudly, rather than 500ing one endpoint later.
+await runMigrations()
 
 // Demo data is opt-in, because a production database has to start empty.
 // seed() inserts six fictional projects plus accounts whose passwords are
@@ -9,14 +15,8 @@ import { purgeApplications } from './jobs/purgeApplications.js'
 // them) — harmless locally, an unlocked front door on a server real residents
 // can reach. Set SEED_DEMO_DATA=true for local development (see .env.example),
 // or run `npm run seed` once against an existing database.
-//
-// getDb() runs pending migrations either way, and running it here rather than
-// lazily on the first request means a broken migration fails at boot — loudly,
-// before the process starts serving — instead of 500ing one endpoint later.
 if (process.env.SEED_DEMO_DATA === 'true') {
-  seed()
-} else {
-  getDb()
+  await seed()
 }
 
 const PORT = process.env.PORT || 4000
