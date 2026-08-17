@@ -1,94 +1,104 @@
 -- Indexes for the queries the API actually runs.
 --
--- SQLite creates a backing index for PRIMARY KEY and UNIQUE constraints but
--- NOT for foreign-key columns, so every per-project listing added in 0001 was
--- a full table scan. That's invisible at seed scale and stops being invisible
--- at a few thousand rows per community — which is one active condo.
+-- This migration is much smaller on MySQL than the SQLite version it replaces,
+-- for one reason: InnoDB automatically creates an index for every FOREIGN KEY
+-- column, which SQLite does not. So the single-column indexes that were the bulk
+-- of the SQLite file — forum_threads(project_id), polls(project_id),
+-- forum_threads(author_user_id), chat_messages(sender_user_id),
+-- defects(reported_by_user_id), petitions(created_by_user_id),
+-- fee_payments(user_id) — already exist as a side effect of the constraints in
+-- 0001 and would be pure duplication here.
 --
--- Every index below names the query it serves. Composite column order follows
--- each query's WHERE-then-ORDER BY shape so one index satisfies both. Adding
--- an index costs write throughput and disk, so nothing speculative is here:
--- if no route or job runs the query, there's no index for it.
+-- What remains is what InnoDB does NOT give for free:
+--   * composite indexes whose extra column answers an ORDER BY, so the sort is
+--     read off the index instead of a filesort;
+--   * forum_upvotes(user_id), which has no FK (see the note in 0001) and so is
+--     genuinely unindexed;
+--   * the retention purge's filter.
 --
--- Deliberately NOT indexed:
---   community_memberships(user_id, project_id) — the hottest query in the app
---     (middleware/auth.js gating every request) is already covered by the
---     UNIQUE(user_id, project_id) constraint's index.
---   fee_payments(project_id, user_id) — covered by the composite primary key.
---   vendors — routes/vendors.js reads the whole table and filters in JS; it's
---     a small global directory, not per-project.
+-- MySQL 8 has no CREATE INDEX IF NOT EXISTS, so each is guarded against
+-- information_schema.STATISTICS — same reasoning as 0002/0003: DDL cannot roll
+-- back, and a failed file is retried from the top.
 
--- Per-project listings ------------------------------------------------------
--- GET /api/projects/:projectId/forum       (routes/forum.js:88, sorted in JS)
-CREATE INDEX IF NOT EXISTS idx_forum_threads_project
-  ON forum_threads(project_id);
+-- GET .../chat/:channel/messages           (routes/chat.js)
+--   WHERE project_id = ? AND channel = ? ORDER BY created_at
+SET @c = (SELECT COUNT(*) FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'chat_messages' AND INDEX_NAME = 'idx_chat_messages_project_channel');
+SET @s = IF(@c = 0, 'CREATE INDEX idx_chat_messages_project_channel ON chat_messages (project_id, channel, created_at)', 'DO 0');
+PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- GET .../chat/:channel/messages           (routes/chat.js:58)
-CREATE INDEX IF NOT EXISTS idx_chat_messages_project_channel
-  ON chat_messages(project_id, channel, created_at);
+-- GET .../defects                          (routes/defects.js)
+--   WHERE project_id = ? ORDER BY reported_at DESC
+SET @c = (SELECT COUNT(*) FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'defects' AND INDEX_NAME = 'idx_defects_project_reported');
+SET @s = IF(@c = 0, 'CREATE INDEX idx_defects_project_reported ON defects (project_id, reported_at)', 'DO 0');
+PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- GET .../defects                          (routes/defects.js:60)
-CREATE INDEX IF NOT EXISTS idx_defects_project
-  ON defects(project_id, reported_at);
+-- GET .../petitions                        (routes/petitions.js)
+--   WHERE project_id = ? ORDER BY created_at DESC
+SET @c = (SELECT COUNT(*) FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'petitions' AND INDEX_NAME = 'idx_petitions_project_created');
+SET @s = IF(@c = 0, 'CREATE INDEX idx_petitions_project_created ON petitions (project_id, created_at)', 'DO 0');
+PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- GET .../petitions                        (routes/petitions.js:40)
-CREATE INDEX IF NOT EXISTS idx_petitions_project
-  ON petitions(project_id, created_at);
+-- GET .../documents                        (routes/documents.js)
+--   WHERE project_id = ? ORDER BY date DESC
+SET @c = (SELECT COUNT(*) FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'documents' AND INDEX_NAME = 'idx_documents_project_date');
+SET @s = IF(@c = 0, 'CREATE INDEX idx_documents_project_date ON documents (project_id, date)', 'DO 0');
+PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- GET .../documents                        (routes/documents.js:11)
-CREATE INDEX IF NOT EXISTS idx_documents_project
-  ON documents(project_id, date);
-
--- GET .../references                       (routes/references.js:32)
-CREATE INDEX IF NOT EXISTS idx_references_project
-  ON references_(project_id, date);
-
--- GET .../polls                            (routes/polls.js:29)
-CREATE INDEX IF NOT EXISTS idx_polls_project
-  ON polls(project_id);
+-- GET .../references                       (routes/references.js)
+--   WHERE project_id = ? ORDER BY date DESC
+SET @c = (SELECT COUNT(*) FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'references_' AND INDEX_NAME = 'idx_references_project_date');
+SET @s = IF(@c = 0, 'CREATE INDEX idx_references_project_date ON references_ (project_id, date)', 'DO 0');
+PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- Poll option fan-out, read once per poll on every list request
--- (routes/polls.js:12, routes/forum.js:57)
-CREATE INDEX IF NOT EXISTS idx_poll_options_poll
-  ON poll_options(poll_id, position);
-CREATE INDEX IF NOT EXISTS idx_thread_poll_options_poll
-  ON thread_poll_options(poll_id, position);
+-- (routes/polls.js, routes/forum.js): WHERE poll_id = ? ORDER BY position
+SET @c = (SELECT COUNT(*) FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'poll_options' AND INDEX_NAME = 'idx_poll_options_poll_position');
+SET @s = IF(@c = 0, 'CREATE INDEX idx_poll_options_poll_position ON poll_options (poll_id, position)', 'DO 0');
+PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- Applications --------------------------------------------------------------
--- Duplicate-application check on submit    (routes/applications.js:93)
--- Also covers the WHERE user_id = ? lookups during erasure (auth.js:148,182).
-CREATE INDEX IF NOT EXISTS idx_applications_user_project
-  ON applications(user_id, project_id);
+SET @c = (SELECT COUNT(*) FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'thread_poll_options' AND INDEX_NAME = 'idx_thread_poll_options_poll_position');
+SET @s = IF(@c = 0, 'CREATE INDEX idx_thread_poll_options_poll_position ON thread_poll_options (poll_id, position)', 'DO 0');
+PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- The 14-day retention purge               (jobs/purgeApplications.js:24-31)
--- Partial: only rows that still hold a document can ever be due, so the index
--- covers exactly the working set and shrinks as documents are purged.
-CREATE INDEX IF NOT EXISTS idx_applications_purge_due
-  ON applications(decided_at)
-  WHERE document_file IS NOT NULL;
+-- Duplicate-application check on submit    (routes/applications.js)
+--   WHERE user_id = ? AND project_id = ? AND status = 'Pending'
+-- The FK on user_id already gives a single-column index; this composite lets
+-- both equality predicates be satisfied from one lookup.
+SET @c = (SELECT COUNT(*) FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'applications' AND INDEX_NAME = 'idx_applications_user_project');
+SET @s = IF(@c = 0, 'CREATE INDEX idx_applications_user_project ON applications (user_id, project_id)', 'DO 0');
+PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- Audit log -----------------------------------------------------------------
--- GET /api/audit-log?action=...            (routes/auditLog.js:20-24)
--- created_at is part of the index, not just action, so the query's
--- `ORDER BY created_at DESC LIMIT 200` is answered by walking the index
--- backwards instead of sorting the matches in a temp B-tree.
--- (target_type/target_id and bare created_at were already indexed in 0002.)
-CREATE INDEX IF NOT EXISTS idx_audit_log_action_created
-  ON audit_log(action, created_at);
+-- The 14-day retention purge               (jobs/purgeApplications.js)
+--   WHERE status IN ('Approved','Rejected') AND decided_at <= ? AND …
+-- The SQLite version used a partial index (… WHERE document_file IS NOT NULL),
+-- which MySQL has no equivalent for. A composite on (status, decided_at) serves
+-- the IN plus the range scan instead; the remaining IS NULL / IS NOT NULL
+-- predicates filter the much smaller result.
+SET @c = (SELECT COUNT(*) FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'applications' AND INDEX_NAME = 'idx_applications_status_decided');
+SET @s = IF(@c = 0, 'CREATE INDEX idx_applications_status_decided ON applications (status, decided_at)', 'DO 0');
+PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- Account erasure -----------------------------------------------------------
--- DELETE /api/auth/users/:id walks every table referencing the user
--- (routes/auth.js:154-182). Without these each erasure is a full scan per
--- table; they also serve the "delete my own post" paths.
-CREATE INDEX IF NOT EXISTS idx_forum_threads_author
-  ON forum_threads(author_user_id);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_sender
-  ON chat_messages(sender_user_id);
-CREATE INDEX IF NOT EXISTS idx_defects_reporter
-  ON defects(reported_by_user_id);
-CREATE INDEX IF NOT EXISTS idx_petitions_creator
-  ON petitions(created_by_user_id);
-CREATE INDEX IF NOT EXISTS idx_forum_upvotes_user
-  ON forum_upvotes(user_id);
-CREATE INDEX IF NOT EXISTS idx_fee_payments_user
-  ON fee_payments(user_id);
+-- GET /api/audit-log?action=...            (routes/auditLog.js)
+-- created_at is in the index so `ORDER BY created_at DESC LIMIT 200` is read
+-- from it rather than sorted in a filesort.
+SET @c = (SELECT COUNT(*) FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'audit_log' AND INDEX_NAME = 'idx_audit_log_action_created');
+SET @s = IF(@c = 0, 'CREATE INDEX idx_audit_log_action_created ON audit_log (action, created_at)', 'DO 0');
+PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- Account erasure walks forum_upvotes by user (routes/auth.js). Unlike every
+-- other user-referencing column, this one has no FK — so InnoDB gave it no
+-- index, and the composite PK starts with thread_id, not user_id.
+SET @c = (SELECT COUNT(*) FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'forum_upvotes' AND INDEX_NAME = 'idx_forum_upvotes_user');
+SET @s = IF(@c = 0, 'CREATE INDEX idx_forum_upvotes_user ON forum_upvotes (user_id)', 'DO 0');
+PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;

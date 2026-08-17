@@ -17,18 +17,21 @@ function cutoffIso(now = new Date()) {
 // in backend/infra/s3-lifecycle.json) and strips document_file from the row,
 // leaving the rest of the application — the "non-reversible record that a
 // document was verified" the privacy policy promises — untouched.
+//
+// decided_at is compared as a string against an ISO cutoff, which is why 0001
+// keeps these columns as VARCHAR holding ISO-8601 rather than DATETIME.
 export async function purgeApplications({ now = new Date() } = {}) {
   const db = getDb()
   const cutoff = cutoffIso(now)
 
-  const due = db.prepare(`
+  const due = await db.all(`
     SELECT * FROM applications
     WHERE status IN ('Approved', 'Rejected')
       AND decided_at IS NOT NULL
       AND decided_at <= ?
       AND document_purged_at IS NULL
       AND document_file IS NOT NULL
-  `).all(cutoff)
+  `, [cutoff])
 
   let purged = 0
   for (const app of due) {
@@ -41,8 +44,8 @@ export async function purgeApplications({ now = new Date() } = {}) {
     }
 
     const purgedAt = new Date().toISOString()
-    db.prepare('UPDATE applications SET document_file = NULL, document_purged_at = ? WHERE id = ?').run(purgedAt, app.id)
-    recordAudit(db, {
+    await db.run('UPDATE applications SET document_file = NULL, document_purged_at = ? WHERE id = ?', [purgedAt, app.id])
+    await recordAudit(db, {
       actorRole: 'system',
       action: 'application.document_purged',
       targetType: 'application',

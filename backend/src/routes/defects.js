@@ -7,6 +7,7 @@ import { requireAuth, requireMembership } from '../middleware/auth.js'
 import { blockSensitiveContent } from '../middleware/sensitiveContent.js'
 import { notFound, forbidden, conflict } from '../util/errors.js'
 import { recordAudit } from '../util/audit.js'
+import { wrap } from '../util/asyncHandler.js'
 
 export const defectsRouter = Router({ mergeParams: true })
 
@@ -37,8 +38,15 @@ const createSchema = z.object({
   unit: z.string().trim().max(40).optional().default('-')
 })
 
-function serialize(db, row) {
-  const author = db.prepare('SELECT name FROM users WHERE id = ?').get(row.reported_by_user_id)
+// Reporter name is joined rather than looked up per row — see the same note in
+// chat.js: one in-process call per row became one network round trip per row.
+const DEFECT_SELECT = `
+  SELECT d.*, u.name AS reporter_name
+  FROM defects d
+  LEFT JOIN users u ON u.id = d.reported_by_user_id
+`
+
+function serialize(row) {
   return {
     id: row.id,
     title: row.title,
@@ -47,7 +55,7 @@ function serialize(db, row) {
     unit: row.unit,
     category: row.category,
     status: row.status,
-    reportedBy: author?.name || 'Unknown',
+    reportedBy: row.reporter_name || 'Unknown',
     reportedAt: row.reported_at,
     matchingUnits: row.matching_units,
     description: row.description,
@@ -55,32 +63,32 @@ function serialize(db, row) {
   }
 }
 
-defectsRouter.get('/', requireAuth, requireMembership, (req, res) => {
-  const db = getDb()
-  const rows = db.prepare('SELECT * FROM defects WHERE project_id = ? ORDER BY reported_at DESC').all(req.params.projectId)
-  res.json(rows.map(r => serialize(db, r)))
-})
+const fetchDefect = (db, defectId) => db.get(`${DEFECT_SELECT} WHERE d.id = ?`, [defectId])
 
-defectsRouter.post('/', requireAuth, requireMembership, validate(createSchema), blockSensitiveContent('title', 'description'), (req, res) => {
+defectsRouter.get('/', requireAuth, requireMembership, wrap(async (req, res) => {
+  const rows = await getDb().all(`${DEFECT_SELECT} WHERE d.project_id = ? ORDER BY d.reported_at DESC`, [req.params.projectId])
+  res.json(rows.map(serialize))
+}))
+
+defectsRouter.post('/', requireAuth, requireMembership, validate(createSchema), blockSensitiveContent('title', 'description'), wrap(async (req, res) => {
   const db = getDb()
   const defectId = id('def')
   const reportedAt = new Date().toISOString().slice(0, 10)
   const { title, description, category, block, floorRange, unit } = req.body
 
-  db.prepare(`
+  await db.run(`
     INSERT INTO defects (id, project_id, title, block, floor_range, unit, category, status, reported_by_user_id, reported_at, matching_units, description)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'Open', ?, ?, 1, ?)
-  `).run(defectId, req.params.projectId, title, block, floorRange, unit, category, req.user.id, reportedAt, description)
+  `, [defectId, req.params.projectId, title, block, floorRange, unit, category, req.user.id, reportedAt, description])
 
-  const row = db.prepare('SELECT * FROM defects WHERE id = ?').get(defectId)
-  res.status(201).json(serialize(db, row))
-})
+  res.status(201).json(serialize(await fetchDefect(db, defectId)))
+}))
 
 // Without the status half of this a defect stays 'Open' forever — the create
 // route hardcodes the status and nothing else could change it.
-defectsRouter.patch('/:defectId', requireAuth, requireMembership, validate(updateSchema), blockSensitiveContent('title', 'description'), (req, res, next) => {
+defectsRouter.patch('/:defectId', requireAuth, requireMembership, validate(updateSchema), blockSensitiveContent('title', 'description'), wrap(async (req, res, next) => {
   const db = getDb()
-  const row = db.prepare('SELECT * FROM defects WHERE id = ? AND project_id = ?').get(req.params.defectId, req.params.projectId)
+  const row = await db.get('SELECT * FROM defects WHERE id = ? AND project_id = ?', [req.params.defectId, req.params.projectId])
   if (!row) return next(notFound("We couldn't find that defect report — it may have been removed."))
 
   const isReporter = row.reported_by_user_id === req.user.id
@@ -107,11 +115,11 @@ defectsRouter.patch('/:defectId', requireAuth, requireMembership, validate(updat
     editedAt: editingContent ? new Date().toISOString() : row.edited_at
   }
 
-  db.prepare('UPDATE defects SET title = ?, description = ?, status = ?, edited_at = ? WHERE id = ?')
-    .run(next_.title, next_.description, next_.status, next_.editedAt, row.id)
+  await db.run('UPDATE defects SET title = ?, description = ?, status = ?, edited_at = ? WHERE id = ?',
+    [next_.title, next_.description, next_.status, next_.editedAt, row.id])
 
   if (req.body.status !== undefined && req.body.status !== previous) {
-    recordAudit(db, {
+    await recordAudit(db, {
       actorUserId: req.user.id,
       actorRole: req.user.role,
       action: 'defect.status_changed',
@@ -123,7 +131,7 @@ defectsRouter.patch('/:defectId', requireAuth, requireMembership, validate(updat
   }
 
   if (editingContent) {
-    recordAudit(db, {
+    await recordAudit(db, {
       actorUserId: req.user.id,
       actorRole: req.user.role,
       action: 'defect.edited',
@@ -134,18 +142,18 @@ defectsRouter.patch('/:defectId', requireAuth, requireMembership, validate(updat
     })
   }
 
-  res.json(serialize(db, db.prepare('SELECT * FROM defects WHERE id = ?').get(row.id)))
-})
+  res.json(serialize(await fetchDefect(db, row.id)))
+}))
 
-defectsRouter.delete('/:defectId', requireAuth, requireMembership, (req, res, next) => {
+defectsRouter.delete('/:defectId', requireAuth, requireMembership, wrap(async (req, res, next) => {
   const db = getDb()
-  const row = db.prepare('SELECT * FROM defects WHERE id = ? AND project_id = ?').get(req.params.defectId, req.params.projectId)
+  const row = await db.get('SELECT * FROM defects WHERE id = ? AND project_id = ?', [req.params.defectId, req.params.projectId])
   if (!row) return next(notFound("We couldn't find that defect report — it may have been removed."))
   if (row.reported_by_user_id !== req.user.id && req.user.role !== 'admin') return next(forbidden('You can only delete defect reports you submitted.'))
 
-  db.prepare('DELETE FROM defects WHERE id = ?').run(row.id)
+  await db.run('DELETE FROM defects WHERE id = ?', [row.id])
 
-  recordAudit(db, {
+  await recordAudit(db, {
     actorUserId: req.user.id,
     actorRole: req.user.role,
     action: 'defect.deleted',
@@ -156,4 +164,4 @@ defectsRouter.delete('/:defectId', requireAuth, requireMembership, (req, res, ne
   })
 
   res.json({ ok: true })
-})
+}))

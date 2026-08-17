@@ -1,6 +1,6 @@
 // Seeds the database with demo data mirroring the frontend's src/demoData.js,
 // so the backend and the existing frontend demo present identical content.
-import { getDb } from './index.js'
+import { getDb, withTransaction } from './index.js'
 import { hashPassword } from '../util/auth.js'
 import { id } from '../util/ids.js'
 
@@ -145,123 +145,123 @@ const defects = {
   p6: [{ id: 'd6-1', title: 'Boom gate stuck — main entrance', block: '-', floorRange: '-', unit: '-', category: 'Security', status: 'In Progress', author: 'u_suresh', reportedAt: '2026-06-10', matchingUnits: 1, description: 'Boom gate arm gets stuck in raised position — manually operated by guards. Motor appears faulty.' }]
 }
 
-export function seed() {
+// One multi-row INSERT per table instead of one round trip per row.
+//
+// This seed writes ~1,600 rows. Under better-sqlite3 that was 1,600 in-process
+// calls and effectively free; against MySQL it was 1,600 network round trips —
+// six seconds per seed, and the test suite reseeds before every test, which put
+// a full run at around half an hour. Batched, the same work is ~20 round trips.
+//
+// Chunked because one statement's placeholders and packet size are both bounded
+// (max_allowed_packet, default 64MB, and mysql2's own limits).
+async function insertRows(tx, table, columns, rows, { ignore = false } = {}) {
+  if (!rows.length) return
+  const CHUNK = 200
+  const cols = columns.map(c => `\`${c}\``).join(', ')
+  const tuple = `(${columns.map(() => '?').join(', ')})`
+  const verb = ignore ? 'INSERT IGNORE' : 'INSERT'
+
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const slice = rows.slice(i, i + CHUNK)
+    await tx.allDynamic(
+      `${verb} INTO \`${table}\` (${cols}) VALUES ${slice.map(() => tuple).join(', ')}`,
+      slice.flat()
+    )
+  }
+}
+
+export async function seed() {
   const db = getDb()
-  const already = db.prepare('SELECT COUNT(*) AS n FROM projects').get().n
+  const { n: already } = await db.get('SELECT COUNT(*) AS n FROM projects')
   if (already > 0) return
 
-  const insertMany = db.transaction(() => {
-    const insertProject = db.prepare(`
-      INSERT INTO projects (id, name, type, state, city, address, owner_count, activity_level, units, blocks, floors_per_block, latest_thread, active_offer_banner)
-      VALUES (@id, @name, @type, @state, @city, @address, @ownerCount, @activityLevel, @units, @blocks, @floorsPerBlock, @latestThread, @activeOfferBanner)
-    `)
-    for (const p of projects) {
-      insertProject.run({ ...p, blocks: JSON.stringify(p.blocks), activeOfferBanner: p.activeOfferBanner ? 1 : 0 })
-    }
+  await withTransaction(async (tx) => {
+    await insertRows(tx, 'projects',
+      ['id', 'name', 'type', 'state', 'city', 'address', 'owner_count', 'activity_level', 'units', 'blocks', 'floors_per_block', 'latest_thread', 'active_offer_banner'],
+      projects.map(p => [p.id, p.name, p.type, p.state, p.city, p.address, p.ownerCount, p.activityLevel, p.units, JSON.stringify(p.blocks), p.floorsPerBlock, p.latestThread ?? null, p.activeOfferBanner ? 1 : 0]))
 
-    const insertVendor = db.prepare(`
-      INSERT INTO vendors (id, name, category, state, districts, tier, rating, reviews, ssm_verified, owner_recommended, description, offer)
-      VALUES (@id, @name, @category, @state, @districts, @tier, @rating, @reviews, @ssmVerified, @ownerRecommended, @description, @offer)
-    `)
-    for (const v of vendors) {
-      insertVendor.run({ ...v, districts: JSON.stringify(v.districts), ssmVerified: v.ssmVerified ? 1 : 0, ownerRecommended: v.ownerRecommended ? 1 : 0, offer: v.offer || null })
-    }
+    await insertRows(tx, 'vendors',
+      ['id', 'name', 'category', 'state', 'districts', 'tier', 'rating', 'reviews', 'ssm_verified', 'owner_recommended', 'description', 'offer'],
+      vendors.map(v => [v.id, v.name, v.category, v.state, JSON.stringify(v.districts), v.tier, v.rating, v.reviews, v.ssmVerified ? 1 : 0, v.ownerRecommended ? 1 : 0, v.description, v.offer || null]))
 
-    const insertDoc = db.prepare(`INSERT INTO documents (id, project_id, title, category, uploaded_by, date) VALUES (@id, @projectId, @title, @category, @uploadedBy, @date)`)
-    for (const [projectId, list] of Object.entries(documents)) {
-      for (const d of list) insertDoc.run({ ...d, projectId })
-    }
+    await insertRows(tx, 'documents',
+      ['id', 'project_id', 'title', 'category', 'uploaded_by', 'date'],
+      Object.entries(documents).flatMap(([projectId, list]) => list.map(d => [d.id, projectId, d.title, d.category, d.uploadedBy, d.date])))
 
-    const insertRef = db.prepare(`
-      INSERT INTO references_ (id, project_id, type, title, description, date, uploaded_by, progress, attachments)
-      VALUES (@id, @projectId, @type, @title, @description, @date, @uploadedBy, @progress, '[]')
-    `)
-    for (const [projectId, list] of Object.entries(references)) {
-      for (const r of list) insertRef.run({ ...r, projectId })
-    }
+    await insertRows(tx, 'references_',
+      ['id', 'project_id', 'type', 'title', 'description', 'date', 'uploaded_by', 'progress', 'attachments'],
+      Object.entries(references).flatMap(([projectId, list]) => list.map(r => [r.id, projectId, r.type, r.title, r.description, r.date, r.uploadedBy, r.progress ?? null, '[]'])))
 
-    const insertFeeTracker = db.prepare(`
-      INSERT INTO fee_tracker (project_id, sinking_fund, monthly_fee, previous_year_fee, fee_increase_flag)
-      VALUES (@projectId, @sinkingFund, @monthlyFee, @previousYearFee, @feeIncreaseFlag)
-    `)
-    const insertFeeHistory = db.prepare(`INSERT INTO fee_history (project_id, month, amount) VALUES (?, ?, ?)`)
-    for (const [projectId, fee] of Object.entries(feeTracker)) {
-      insertFeeTracker.run({ projectId, sinkingFund: fee.sinkingFund, monthlyFee: fee.monthlyFee, previousYearFee: fee.previousYearFee, feeIncreaseFlag: fee.feeIncreaseFlag ? 1 : 0 })
-      for (const [month, amount] of fee.history) insertFeeHistory.run(projectId, month, amount)
-    }
+    await insertRows(tx, 'fee_tracker',
+      ['project_id', 'sinking_fund', 'monthly_fee', 'previous_year_fee', 'fee_increase_flag'],
+      Object.entries(feeTracker).map(([projectId, fee]) => [projectId, fee.sinkingFund, fee.monthlyFee, fee.previousYearFee, fee.feeIncreaseFlag ? 1 : 0]))
 
-    const insertUser = db.prepare(`INSERT INTO users (id, name, email, password_hash, role, created_at) VALUES (@id, @name, @email, @passwordHash, @role, @createdAt)`)
-    const insertMembership = db.prepare(`
-      INSERT INTO community_memberships (id, user_id, project_id, tier, unit, verified_at)
-      VALUES (@id, @userId, @projectId, @tier, @unit, @verifiedAt)
-    `)
+    await insertRows(tx, 'fee_history',
+      ['project_id', 'month', 'amount'],
+      Object.entries(feeTracker).flatMap(([projectId, fee]) => fee.history.map(([month, amount]) => [projectId, month, amount])))
 
-    insertUser.run({ id: 'u_admin', name: 'Platform Admin', email: 'admin@propgather.com', passwordHash: hashPassword('admin123'), role: 'admin', createdAt: now() })
+    await insertRows(tx, 'users',
+      ['id', 'name', 'email', 'password_hash', 'role', 'created_at'],
+      [
+        ['u_admin', 'Platform Admin', 'admin@propgather.com', hashPassword('admin123'), 'admin', now()],
+        ...demoResidents.map(r => [r.id, r.name, r.email, hashPassword(r.password), 'resident', now()])
+      ])
 
-    for (const r of demoResidents) {
-      insertUser.run({ id: r.id, name: r.name, email: r.email, passwordHash: hashPassword(r.password), role: 'resident', createdAt: now() })
-      insertMembership.run({ id: id('mem'), userId: r.id, projectId: r.projectId, tier: r.tier, unit: r.unit, verifiedAt: '2026-03-15' })
-    }
+    await insertRows(tx, 'community_memberships',
+      ['id', 'user_id', 'project_id', 'tier', 'unit', 'verified_at'],
+      demoResidents.map(r => [id('mem'), r.id, r.projectId, r.tier, r.unit, '2026-03-15']))
 
     // fee payments for the seeded members of each project
-    const insertPayment = db.prepare(`INSERT OR IGNORE INTO fee_payments (project_id, user_id, month, amount, status) VALUES (?, ?, ?, ?, ?)`)
-    for (const r of demoResidents) {
-      for (const [month, amount, status] of feePayments[r.projectId] || []) {
-        insertPayment.run(r.projectId, r.id, month, amount, status)
-      }
-    }
+    await insertRows(tx, 'fee_payments',
+      ['project_id', 'user_id', 'month', 'amount', 'status'],
+      demoResidents.flatMap(r => (feePayments[r.projectId] || []).map(([month, amount, status]) => [r.projectId, r.id, month, amount, status])),
+      { ignore: true })
 
-    const insertThread = db.prepare(`
-      INSERT INTO forum_threads (id, project_id, category, title, body, author_user_id, pinned, replies, attachments, created_at)
-      VALUES (@id, @projectId, @category, @title, @body, @authorUserId, @pinned, @replies, '[]', @createdAt)
-    `)
-    const insertUpvote = db.prepare(`INSERT OR IGNORE INTO forum_upvotes (thread_id, user_id) VALUES (?, ?)`)
-    for (const [projectId, list] of Object.entries(forumThreads)) {
-      for (const t of list) {
-        insertThread.run({ id: t.id, projectId, category: t.category, title: t.title, body: t.body, authorUserId: t.author, pinned: t.pinned ? 1 : 0, replies: t.replies, createdAt: t.createdAt })
-        // Fabricate distinct "voter" rows so the seeded upvote count matches
-        // the original demo numbers without a real per-user identity per vote.
-        const count = threadUpvotes[t.id] || 0
-        for (let i = 0; i < count; i++) insertUpvote.run(t.id, `seed_voter_${t.id}_${i}`)
-      }
-    }
+    await insertRows(tx, 'forum_threads',
+      ['id', 'project_id', 'category', 'title', 'body', 'author_user_id', 'pinned', 'replies', 'attachments', 'created_at'],
+      Object.entries(forumThreads).flatMap(([projectId, list]) =>
+        list.map(t => [t.id, projectId, t.category, t.title, t.body, t.author, t.pinned ? 1 : 0, t.replies, '[]', t.createdAt])))
 
-    const insertPetition = db.prepare(`
-      INSERT INTO petitions (id, project_id, title, description, target, created_by_user_id, created_at)
-      VALUES (@id, @projectId, @title, @description, @target, @author, @createdAt)
-    `)
-    const insertSignature = db.prepare(`INSERT OR IGNORE INTO petition_signatures (petition_id, user_id) VALUES (?, ?)`)
-    for (const [projectId, list] of Object.entries(petitions)) {
-      for (const p of list) {
-        insertPetition.run({ ...p, projectId })
-        for (let i = 0; i < p.signatures; i++) insertSignature.run(p.id, `seed_signer_${p.id}_${i}`)
-      }
-    }
+    // Fabricate distinct "voter" rows so the seeded upvote count matches the
+    // original demo numbers without a real per-user identity per vote.
+    await insertRows(tx, 'forum_upvotes', ['thread_id', 'user_id'],
+      Object.values(forumThreads).flat().flatMap(t =>
+        Array.from({ length: threadUpvotes[t.id] || 0 }, (_, i) => [t.id, `seed_voter_${t.id}_${i}`])),
+      { ignore: true })
 
-    const insertPoll = db.prepare(`INSERT INTO polls (id, project_id, question, expires_at) VALUES (@id, @projectId, @question, @expiresAt)`)
-    const insertPollOption = db.prepare(`INSERT INTO poll_options (id, poll_id, label, position) VALUES (?, ?, ?, ?)`)
-    const insertPollVote = db.prepare(`INSERT OR IGNORE INTO poll_votes (poll_id, user_id, option_id) VALUES (?, ?, ?)`)
-    for (const [projectId, list] of Object.entries(polls)) {
-      for (const p of list) {
-        insertPoll.run({ id: p.id, projectId, question: p.question, expiresAt: p.expiresAt })
-        p.options.forEach(([optId, label, votes], idx) => {
+    await insertRows(tx, 'petitions',
+      ['id', 'project_id', 'title', 'description', 'target', 'created_by_user_id', 'created_at'],
+      Object.entries(petitions).flatMap(([projectId, list]) =>
+        list.map(p => [p.id, projectId, p.title, p.description, p.target, p.author, p.createdAt])))
+
+    await insertRows(tx, 'petition_signatures', ['petition_id', 'user_id'],
+      Object.values(petitions).flat().flatMap(p =>
+        Array.from({ length: p.signatures }, (_, i) => [p.id, `seed_signer_${p.id}_${i}`])),
+      { ignore: true })
+
+    await insertRows(tx, 'polls',
+      ['id', 'project_id', 'question', 'expires_at'],
+      Object.entries(polls).flatMap(([projectId, list]) => list.map(p => [p.id, projectId, p.question, p.expiresAt ?? null])))
+
+    await insertRows(tx, 'poll_options',
+      ['id', 'poll_id', 'label', 'position'],
+      Object.values(polls).flat().flatMap(p =>
+        p.options.map(([optId, label], idx) => [`${p.id}-${optId}`, p.id, label, idx])))
+
+    await insertRows(tx, 'poll_votes', ['poll_id', 'user_id', 'option_id'],
+      Object.values(polls).flat().flatMap(p =>
+        p.options.flatMap(([optId, , votes]) => {
           const optionId = `${p.id}-${optId}`
-          insertPollOption.run(optionId, p.id, label, idx)
-          for (let i = 0; i < votes; i++) insertPollVote.run(p.id, `seed_voter_${optionId}_${i}`, optionId)
-        })
-      }
-    }
+          return Array.from({ length: votes }, (_, i) => [p.id, `seed_voter_${optionId}_${i}`, optionId])
+        })),
+      { ignore: true })
 
-    const insertDefect = db.prepare(`
-      INSERT INTO defects (id, project_id, title, block, floor_range, unit, category, status, reported_by_user_id, reported_at, matching_units, description)
-      VALUES (@id, @projectId, @title, @block, @floorRange, @unit, @category, @status, @author, @reportedAt, @matchingUnits, @description)
-    `)
-    for (const [projectId, list] of Object.entries(defects)) {
-      for (const d of list) insertDefect.run({ ...d, projectId })
-    }
+    await insertRows(tx, 'defects',
+      ['id', 'project_id', 'title', 'block', 'floor_range', 'unit', 'category', 'status', 'reported_by_user_id', 'reported_at', 'matching_units', 'description'],
+      Object.entries(defects).flatMap(([projectId, list]) =>
+        list.map(d => [d.id, projectId, d.title, d.block, d.floorRange, d.unit, d.category, d.status, d.author, d.reportedAt, d.matchingUnits, d.description])))
   })
 
-  insertMany()
   if (process.env.NODE_ENV !== 'test') {
     // eslint-disable-next-line no-console
     console.log('Database seeded.')
@@ -270,5 +270,9 @@ export function seed() {
 
 // Allow running directly: `node src/db/seed.js`
 if (process.argv[1] && process.argv[1].endsWith('seed.js')) {
-  seed()
+  const { runMigrations } = await import('./migrate.js')
+  const { closeDb } = await import('./index.js')
+  await runMigrations()
+  await seed()
+  await closeDb()
 }

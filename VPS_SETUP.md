@@ -148,9 +148,10 @@ sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
-Do this even on 2 GB. `better-sqlite3` compiles from source during
-`npm ci`, and node-gyp is the most memory-hungry thing that will ever run on
-this box — it's the classic cause of a failed first install on a small VPS.
+Less critical than it was on the SQLite build (nothing compiles from source any
+more), but still worth having: MySQL and Node now share this box, and swap is
+what turns a memory spike into a slow moment rather than an OOM kill of
+`mysqld`.
 
 **Check:** `free -h` shows a 2.0Gi swap line.
 
@@ -159,13 +160,19 @@ this box — it's the classic cause of a failed first install on a small VPS.
 ## 6. Install packages
 
 ```bash
-sudo apt install -y build-essential python3 git curl nginx sqlite3 ufw \
-  fail2ban unattended-upgrades
+sudo apt install -y git curl nginx mysql-server ufw fail2ban unattended-upgrades
 ```
 
-Why each: **build-essential + python3** compile `better-sqlite3` (without them
-`npm ci` fails with node-gyp errors); **nginx** terminates TLS in front of Node;
-**sqlite3** is the CLI used for backups; the rest is security housekeeping.
+Why each: **mysql-server** is the database (configured in
+[DEPLOYMENT.md](DEPLOYMENT.md) §2.4 — user, grants, buffer pool); **nginx**
+terminates TLS in front of Node; the rest is security housekeeping.
+
+No compiler toolchain is needed. The SQLite build required `build-essential` and
+`python3` to compile `better-sqlite3` from source, which was the classic cause of
+a failed first `npm ci` on a small VPS. `mysql2` is pure JavaScript, so that
+whole failure mode is gone.
+
+**Check:** `systemctl is-active mysql` prints `active`.
 
 ### Node 22 LTS
 
@@ -307,7 +314,7 @@ ssh chee@YOUR_SERVER_IP
 free -h                  # swap still present
 sudo ufw status          # still active
 node -v                  # still v22.x
-systemctl is-active fail2ban nginx
+systemctl is-active fail2ban nginx mysql
 ```
 
 ---
@@ -317,7 +324,7 @@ systemctl is-active fail2ban nginx
 - [ ] A non-root sudo user with key-only SSH; root login refused
 - [ ] Ubuntu patched, hostname set, clock on Malaysia time
 - [ ] 2 GB swap so the native build can't OOM
-- [ ] Node 22 + a working compiler toolchain
+- [ ] Node 22 and MySQL 8 both installed and running
 - [ ] Firewall allowing only SSH and HTTP/HTTPS
 - [ ] fail2ban, unattended security upgrades, capped logs
 - [ ] DNS resolving to this box

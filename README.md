@@ -12,7 +12,7 @@ Live demo: https://lch99.github.io/Prop-Gather
 The **frontend is a fully working demo** — it runs entirely against an
 in-memory mock API (`src/api.js` + `src/demoData.js`), no server required.
 
-A **real backend** (`backend/`) exists in parallel — Express + SQLite with
+A **real backend** (`backend/`) exists in parallel — Express + MySQL with
 real auth, persistence, and per-community access control — but the frontend
 does not call it yet. Wiring `src/api.js` up to `backend`'s REST endpoints is
 the next major step (see `backend/README.md` → "Not yet wired up").
@@ -23,7 +23,7 @@ the next major step (see `backend/README.md` → "Not yet wired up").
 use inline styles from `src/theme.js` (design tokens) plus a small global
 stylesheet (`src/index.css`) for animations and responsive breakpoints.
 
-**Backend** — Express, better-sqlite3, JWT auth (`jsonwebtoken` + `bcryptjs`),
+**Backend** — Express, MySQL 8 via `mysql2`, JWT auth (`jsonwebtoken` + `bcryptjs`),
 `zod` for request validation, tested with vitest + supertest.
 
 ## Getting started (frontend)
@@ -47,12 +47,20 @@ npm run deploy      # build + publish dist/ to GitHub Pages
 
 ## Getting started (backend — optional, not yet wired to the frontend)
 
+Needs a local **MySQL 8**. Create the two databases first (the app's, and a
+scratch one for tests — the suite empties it before every test):
+
+```
+CREATE DATABASE propgather      CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE propgather_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
 ```
 cd backend
 npm install
-cp .env.example .env   # optional, defaults work out of the box
-npm run dev             # http://localhost:4000, auto-seeds on first run
-npm test                # 163 vitest + supertest tests
+cp .env.example .env    # set MYSQL_USER / MYSQL_PASSWORD to match your server
+npm run dev             # http://localhost:4000, migrates on boot
+npm test                # 294 vitest + supertest tests (against propgather_test)
 npm run purge            # one-off run of the 14-day document-retention job
 ```
 
@@ -76,7 +84,7 @@ src/
 backend/
   src/app.js               Express app + route mounting
   src/routes/               one file per resource (auth, projects, forum, chat, …)
-  src/db/                   migrations/*.sql, seed.js, sqlite connection
+  src/db/                   migrations/*.sql, seed.js, mysql2 pool + helpers
   src/middleware/           auth, per-project membership gating, validation
   src/util/                 s3.js (presigned upload/download URLs), audit.js (audit_log)
   src/jobs/                 purgeApplications.js — 14-day document retention

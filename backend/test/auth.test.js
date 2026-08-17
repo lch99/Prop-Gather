@@ -3,7 +3,7 @@ import request from 'supertest'
 import { freshApp, RESIDENT, ADMIN, login } from './helpers.js'
 
 let app
-beforeEach(() => { app = freshApp() })
+beforeEach(async () => { app = await freshApp() })
 
 describe('POST /api/auth/register', () => {
   it('creates a new resident account and returns a token', async () => {

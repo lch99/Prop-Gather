@@ -7,6 +7,7 @@ import { requireAuth, requireMembership } from '../middleware/auth.js'
 import { blockSensitiveContent } from '../middleware/sensitiveContent.js'
 import { badRequest, notFound, forbidden, conflict } from '../util/errors.js'
 import { recordAudit } from '../util/audit.js'
+import { wrap } from '../util/asyncHandler.js'
 
 export const chatRouter = Router({ mergeParams: true })
 
@@ -33,18 +34,25 @@ const sendSchema = z.object({
   attachments: z.array(attachmentSchema).max(6).optional().default([])
 })
 
-function serializeMessage(db, row, projectId) {
-  const author = db.prepare(`
-    SELECT u.name, cm.unit, cm.tier
-    FROM users u LEFT JOIN community_memberships cm ON cm.user_id = u.id AND cm.project_id = ?
-    WHERE u.id = ?
-  `).get(projectId, row.sender_user_id)
+// Author details are joined in rather than fetched per message. Under
+// better-sqlite3 a lookup per row was an in-process function call costing
+// microseconds; against MySQL each one is a network round trip, so a busy
+// channel turned one request into hundreds of queries. The output shape is
+// unchanged — only the number of round trips is.
+const MESSAGE_SELECT = `
+  SELECT m.*, u.name AS sender_name, cm.unit AS sender_unit, cm.tier AS sender_tier
+  FROM chat_messages m
+  LEFT JOIN users u ON u.id = m.sender_user_id
+  LEFT JOIN community_memberships cm
+    ON cm.user_id = m.sender_user_id AND cm.project_id = m.project_id
+`
 
+function serializeMessage(row) {
   return {
     id: row.id,
-    sender: author?.name || 'Unknown',
-    unit: author?.unit || '-',
-    tier: author?.tier || 'Owner',
+    sender: row.sender_name || 'Unknown',
+    unit: row.sender_unit || '-',
+    tier: row.sender_tier || 'Owner',
     verified: true,
     text: row.text,
     attachments: JSON.parse(row.attachments),
@@ -53,29 +61,30 @@ function serializeMessage(db, row, projectId) {
   }
 }
 
-chatRouter.get('/:channel/messages', requireAuth, requireMembership, requireValidChannel, (req, res) => {
-  const db = getDb()
-  const rows = db.prepare('SELECT * FROM chat_messages WHERE project_id = ? AND channel = ? ORDER BY created_at').all(req.params.projectId, req.params.channel)
-  res.json(rows.map(r => serializeMessage(db, r, req.params.projectId)))
-})
+const fetchMessage = (db, messageId) => db.get(`${MESSAGE_SELECT} WHERE m.id = ?`, [messageId])
 
-chatRouter.post('/:channel/messages', requireAuth, requireMembership, requireValidChannel, validate(sendSchema), blockSensitiveContent('text'), (req, res) => {
+chatRouter.get('/:channel/messages', requireAuth, requireMembership, requireValidChannel, wrap(async (req, res) => {
+  const rows = await getDb().all(
+    `${MESSAGE_SELECT} WHERE m.project_id = ? AND m.channel = ? ORDER BY m.created_at`,
+    [req.params.projectId, req.params.channel]
+  )
+  res.json(rows.map(serializeMessage))
+}))
+
+chatRouter.post('/:channel/messages', requireAuth, requireMembership, requireValidChannel, validate(sendSchema), blockSensitiveContent('text'), wrap(async (req, res) => {
   const db = getDb()
   const { text, attachments } = req.body
   const msgId = id('msg')
   const createdAt = new Date().toISOString()
 
-  db.prepare(`
+  await db.run(`
     INSERT INTO chat_messages (id, project_id, channel, sender_user_id, text, attachments, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(msgId, req.params.projectId, req.params.channel, req.user.id, text, JSON.stringify(attachments), createdAt)
+  `, [msgId, req.params.projectId, req.params.channel, req.user.id, text, JSON.stringify(attachments), createdAt])
 
-  const row = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(msgId)
-  res.status(201).json(serializeMessage(db, row, req.params.projectId))
-})
+  res.status(201).json(serializeMessage(await fetchMessage(db, msgId)))
+}))
 
-// Lets a resident remove their own message (or an admin remove any message) —
-// same PDPA rationale as forum thread deletion (see forum.js).
 const editSchema = z.object({
   text: z.string().trim().min(1, 'Message cannot be empty').max(2000)
 })
@@ -83,18 +92,19 @@ const editSchema = z.object({
 // One edit, sender only — same reasoning as forum threads (see forum.js).
 // Attachments aren't editable; a message whose file was wrong should be deleted
 // and resent rather than have different bytes appear under the same message.
-chatRouter.patch('/:channel/messages/:messageId', requireAuth, requireMembership, requireValidChannel, validate(editSchema), blockSensitiveContent('text'), (req, res, next) => {
+chatRouter.patch('/:channel/messages/:messageId', requireAuth, requireMembership, requireValidChannel, validate(editSchema), blockSensitiveContent('text'), wrap(async (req, res, next) => {
   const db = getDb()
-  const msg = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND project_id = ? AND channel = ?')
-    .get(req.params.messageId, req.params.projectId, req.params.channel)
+  const msg = await db.get(
+    'SELECT * FROM chat_messages WHERE id = ? AND project_id = ? AND channel = ?',
+    [req.params.messageId, req.params.projectId, req.params.channel]
+  )
   if (!msg) return next(notFound("We couldn't find that message — it may have been deleted."))
   if (msg.sender_user_id !== req.user.id) return next(forbidden('Only the person who sent this message can edit it.'))
   if (msg.edited_at) return next(conflict('This message has already been edited. Messages can only be edited once.'))
 
-  db.prepare('UPDATE chat_messages SET text = ?, edited_at = ? WHERE id = ?')
-    .run(req.body.text, new Date().toISOString(), msg.id)
+  await db.run('UPDATE chat_messages SET text = ?, edited_at = ? WHERE id = ?', [req.body.text, new Date().toISOString(), msg.id])
 
-  recordAudit(db, {
+  await recordAudit(db, {
     actorUserId: req.user.id,
     actorRole: req.user.role,
     action: 'chat.message_edited',
@@ -104,19 +114,23 @@ chatRouter.patch('/:channel/messages/:messageId', requireAuth, requireMembership
     metadata: { channel: req.params.channel }
   })
 
-  res.json(serializeMessage(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(msg.id), req.params.projectId))
-})
+  res.json(serializeMessage(await fetchMessage(db, msg.id)))
+}))
 
-chatRouter.delete('/:channel/messages/:messageId', requireAuth, requireMembership, requireValidChannel, (req, res, next) => {
+// Lets a resident remove their own message (or an admin remove any message) —
+// same PDPA rationale as forum thread deletion (see forum.js).
+chatRouter.delete('/:channel/messages/:messageId', requireAuth, requireMembership, requireValidChannel, wrap(async (req, res, next) => {
   const db = getDb()
-  const msg = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND project_id = ? AND channel = ?')
-    .get(req.params.messageId, req.params.projectId, req.params.channel)
+  const msg = await db.get(
+    'SELECT * FROM chat_messages WHERE id = ? AND project_id = ? AND channel = ?',
+    [req.params.messageId, req.params.projectId, req.params.channel]
+  )
   if (!msg) return next(notFound("We couldn't find that message — it may have been deleted."))
   if (msg.sender_user_id !== req.user.id && req.user.role !== 'admin') return next(forbidden('You can only delete your own messages.'))
 
-  db.prepare('DELETE FROM chat_messages WHERE id = ?').run(msg.id)
+  await db.run('DELETE FROM chat_messages WHERE id = ?', [msg.id])
 
-  recordAudit(db, {
+  await recordAudit(db, {
     actorUserId: req.user.id,
     actorRole: req.user.role,
     action: 'chat.message_deleted',
@@ -127,4 +141,4 @@ chatRouter.delete('/:channel/messages/:messageId', requireAuth, requireMembershi
   })
 
   res.json({ ok: true })
-})
+}))

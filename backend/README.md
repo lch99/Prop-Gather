@@ -1,6 +1,6 @@
 # PropGather backend
 
-Express + SQLite (better-sqlite3) API server implementing the same data contract as
+Express + MySQL 8 (mysql2) API server implementing the same data contract as
 the frontend's demo `src/api.js`, backed by real persistence, authentication and
 per-community access control.
 
@@ -39,36 +39,76 @@ keep it out of shell history.
 
 ## Data model
 
-SQLite file at `DB_PATH` (default `./data.sqlite3`). Schema is built from ordered
-`.sql` files in `src/db/migrations/`, applied automatically on `getDb()` (tracked in
-a `migrations` table so each file only runs once) — run `npm run migrate` to apply
-pending ones without starting the server. Seed data mirroring `src/demoData.js` is
-in `src/db/seed.js`. Delete the `.sqlite3` file to reset local data — migrations and
-the seed rerun on next start.
+**MySQL 8**, connected via `mysql2` (see `MYSQL_*` in `.env.example`). Schema is
+built from ordered `.sql` files in `src/db/migrations/`, tracked in a
+`migrations` table so each file only runs once. `src/index.js` awaits
+`runMigrations()` before listening, so a broken migration fails the boot rather
+than one endpoint later; `npm run migrate` applies pending ones without starting
+the server. Seed data mirroring `src/demoData.js` is in `src/db/seed.js`.
 
-New schema changes go in a new `src/db/migrations/000N_description.sql` file
-(never edit an already-applied one) — keep statements idempotent (`IF NOT EXISTS` /
-`IF NOT EXISTS` column checks) where practical.
+To reset local data: `DROP DATABASE propgather; CREATE DATABASE propgather;`
+then restart — migrations and (with `SEED_DEMO_DATA=true`) the seed rerun.
+
+### Every query is asynchronous
+
+This backend previously used `better-sqlite3`, which was synchronous. `mysql2`
+is not, so every query is awaited and every function containing one is `async`.
+`src/db/index.js` exposes a small surface deliberately shaped like the idioms it
+replaced, so the SQL in routes survived the migration unchanged:
+
+```js
+await db.get(sql, params)   // one row, or undefined
+await db.all(sql, params)   // rows
+await db.run(sql, params)   // { changes, insertId }
+await withTransaction(async (tx) => { … })   // all queries pinned to one connection
+```
+
+Named parameters use `:name` (mysql2's `namedPlaceholders`), where SQLite used
+`@name`. Express 4 doesn't observe promises returned from handlers, so async
+route handlers are wrapped in `wrap()` from `src/util/asyncHandler.js` —
+otherwise a rejection hangs the request instead of reaching the error middleware.
+
+### Writing migrations
+
+New schema changes go in a new `src/db/migrations/000N_description.sql` file —
+never edit an already-applied one.
+
+**Every statement must be safely re-runnable.** MySQL implicitly commits around
+DDL, so a migration is *not* atomic: a file that fails partway leaves its earlier
+statements applied, and the runner retries it from the top on the next boot.
+`CREATE TABLE IF NOT EXISTS` and `INSERT IGNORE` suffice on their own;
+`ADD COLUMN`, `ADD CONSTRAINT` and `CREATE INDEX` need an `information_schema`
+guard, because MySQL 8 (unlike MariaDB) has no `IF NOT EXISTS` for them — copy
+the `SET @c = (SELECT COUNT(*) …)` / `PREPARE` / `EXECUTE` pattern from 0002.
 
 Migrations contain **schema only, never rows**. Anything that inserts data
 belongs in `seed.js` (demo) or a CLI like `createAdmin.js` (operational), so
 that applying migrations to a production database can never introduce content.
 
+Type choices that are load-bearing, not incidental:
+
+- ids are `VARCHAR(64)` — MySQL can't index `TEXT` without a prefix length, and
+  FK columns must match the referenced type exactly
+- timestamps are `VARCHAR(40)` ISO strings, not `DATETIME` — the retention purge
+  compares them as text and routes serialize them straight to JSON
+- JSON-bearing columns are `TEXT`, not `JSON` — mysql2 auto-parses the `JSON`
+  type, which would break the explicit `JSON.parse()` in the routes
+- `rating` is `DOUBLE`, not `DECIMAL` — mysql2 returns `DECIMAL` as a string
+
 `0004_performance_indexes.sql` covers the queries the routes and jobs actually
-run — per-project listings, the duplicate-application check, the retention
-purge, audit-log filtering, and the erasure cascade. SQLite indexes PRIMARY KEY
-and UNIQUE constraints but not foreign-key columns, so before it every
-per-project listing was a full table scan. `community_memberships` is
-deliberately absent: the app's hottest query is already served by its
-`UNIQUE(user_id, project_id)` index. Check any new query with
-`EXPLAIN QUERY PLAN` — `SEARCH … USING INDEX` good, `SCAN` worth a look.
+run. It's much smaller than its SQLite ancestor because **InnoDB auto-indexes
+every FK column**; what remains is the composites that also answer an `ORDER BY`,
+`forum_upvotes(user_id)` (the one user column with no FK), and the retention
+purge's filter. `community_memberships` is deliberately absent — the app's
+hottest query is already served by its `UNIQUE(user_id, project_id)` index.
+Check any new query with `EXPLAIN` before adding an index for it.
 
 ## File storage (S3)
 
 Ownership-proof documents (`applications.document_file`) are never stored on this
-server or in SQLite — only a small JSON reference (`{name, type, size, key}`)
+server or in the database — only a small JSON reference (`{name, type, size, key}`)
 is, where `key` is the object's path in an S3 bucket. This is what keeps the
-sqlite file (and whatever disk quota the host gives you, e.g. Hostinger) from
+database (and whatever disk quota the host gives you) from
 bloating with base64 blobs of scanned SPAs/utility bills.
 
 Flow (`src/util/s3.js`, `src/routes/applications.js`):
@@ -223,7 +263,7 @@ handling — see `src/pages/PrivacyPage.jsx` on the frontend for the policy this
 implements:
 
 - **Storage** — files live in S3 behind short-lived presigned URLs (`src/util/s3.js`),
-  never as blobs in SQLite. See `backend/infra/README.md` for the bucket
+  never as blobs in the database. See `backend/infra/README.md` for the bucket
   lifecycle/encryption/CORS/IAM setup.
 - **Consent** — `POST /api/applications` requires `consent: true` and records
   `consent_accepted_at` server-side.
@@ -285,19 +325,31 @@ step when changing the rules. The backend is the enforcing copy.
 npm test
 ```
 
-163 tests (vitest + supertest) covering every route's positive and negative paths:
+294 tests (vitest + supertest) covering every route's positive and negative paths:
 auth, validation errors, 401/403/404/409 access control, idempotent
 upvote/sign/vote endpoints, the full register → apply → admin-approve →
 gated-access flow, audit-log coverage of every application lifecycle event,
 the document-retention purge job, and (`fullUserJourney.test.js`) an
 end-to-end run of one verified resident through every gated resource plus a
 full 401/403 sweep for an unauthenticated caller and a non-member stranger.
-Tests run against an isolated in-memory SQLite database
-(`DB_PATH=:memory:`, reset per test) — no shared state, no real file touched,
-and no real AWS calls (`test/setup.js` mocks `src/util/s3.js`).
 
-Password hashing cost is lowered via `BCRYPT_ROUNDS=4` in `vitest.config.js` purely
-for test speed; production always uses the real cost factor (10).
+**Tests need a running MySQL.** There is no `:memory:` equivalent, and using a
+different engine for tests than for production would hide exactly the dialect
+bugs worth catching. They run against `MYSQL_TEST_DATABASE` (default
+`propgather_test`) using the `MYSQL_*` settings from `vitest.config.js`:
+
+```
+CREATE DATABASE propgather_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+`freshApp()` empties every table and reseeds before each test, so **point this at
+a scratch database, never your dev one**. `fileParallelism` is off because all
+files share that single database. No real AWS calls either way — `test/setup.js`
+mocks `src/util/s3.js`.
+
+Password hashing cost is lowered via `BCRYPT_ROUNDS=4` in `vitest.config.js`
+purely for test speed — it dominates otherwise (measured: ~2.9s of a 4.2s seed at
+the real cost factor). Production always uses 10.
 
 ## Not yet wired up
 

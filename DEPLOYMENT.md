@@ -6,7 +6,7 @@ How to ship PropGather. Two independent deliverables — deploying one does
 | What | Where | How | Deployed today? |
 |---|---|---|---|
 | Frontend (`src/`) | GitHub Pages → https://lch99.github.io/Prop-Gather | `npm run deploy` | Yes (`gh-pages` branch exists) |
-| Backend (`backend/`) | Ubuntu server (systemd + nginx) + Cloudflare R2 | Part 2 | Not yet |
+| Backend (`backend/`) | Ubuntu server (systemd + nginx) + MySQL 8 + Cloudflare R2 | Part 2 | Not yet |
 
 The frontend runs entirely on `src/api.js`, an in-memory mock — **it does not
 call the backend**. So the demo site deploys and works with no server, no
@@ -138,34 +138,49 @@ never touch the database):
 | Path | Contents |
 |---|---|
 | `/opt/propgather` | the git checkout |
-| `/var/lib/propgather` | `data.sqlite3` + its `-wal`/`-shm` |
+| `/var/lib/mysql` | MySQL's data directory (owned by MySQL, not this app) |
 | `/etc/propgather.env` | secrets, `0600` |
 | `/var/backups/propgather` | nightly backups |
 
 ### 2.0 Sizing the VPS
 
-**Recommended: 2 vCPU / 2 GB RAM / 40 GB SSD, Singapore region.** Roughly
-USD 12–14/month on DigitalOcean, Vultr or Linode; less on Hostinger or Contabo.
+**Recommended: 2 vCPU / 4 GB RAM / 40 GB SSD, Singapore region.** Roughly
+USD 24/month on DigitalOcean, Vultr or Linode; less on Hostinger or Contabo.
 
 | Tier | Spec | Verdict |
 |---|---|---|
-| Too small | 1 vCPU / 512 MB | `npm ci` OOMs compiling better-sqlite3 unless you add swap. Avoid. |
-| Minimum | 1 vCPU / 1 GB / 25 GB | Genuinely works for a handful of communities. Add 2 GB swap. |
-| **Recommended** | **2 vCPU / 2 GB / 40 GB** | Headroom for the native build, backups, and traffic spikes. |
-| Overkill | 4 vCPU / 8 GB+ | Nothing here can use it — see below. |
+| Too small | 1 vCPU / 1 GB | MySQL and Node fighting over 1 GB. Avoid. |
+| Minimum | 1 vCPU / 2 GB / 25 GB | Works with `innodb_buffer_pool_size` tuned down (see 2.4). Add 2 GB swap. |
+| **Recommended** | **2 vCPU / 4 GB / 40 GB** | Comfortable defaults, no tuning needed to stay off swap. |
+| Overkill | 4 vCPU / 16 GB+ | Nothing here can use it — see below. |
 
-**Why it stays small.** There's no database server to feed (SQLite is in-process),
-no document storage on disk (R2 holds them), and no frontend to serve (GitHub
-Pages does). The Node process idles at **54 MB RSS** with all dependencies
-loaded. What's left is one Express process and a file.
+**This is double what the SQLite version needed**, and MySQL is the entire
+reason. SQLite ran in-process for free; `mysqld` is a second daemon that wants
+memory of its own — its default `innodb_buffer_pool_size` alone is 128 MB, and a
+realistic resident set is 400–600 MB. The Node process still idles at **54 MB
+RSS**. Budget roughly:
 
-**Storage is a non-issue.** Measured: 20,000 chat messages plus 2,000 forum
-threads with realistic bodies = **4.4 MB**. A busy 500-unit community generates
-a few MB a year; fifty communities over five years still fits in about a
-gigabyte. The whole `node_modules` tree is **66 MB** (12 MB of that is
-better-sqlite3, 9 MB the AWS SDK), and that's *with* dev dependencies —
-`--omit=dev` on the server trims it further. So the disk is really for Ubuntu
-(~3 GB), backups and logs: 25 GB is ample, 40 GB is comfortable.
+```
+4 GB VPS
+├── mysqld      ~600 MB   (buffer pool + per-connection buffers)
+├── node         ~150 MB   under load
+├── nginx         ~20 MB
+└── OS + headroom
+```
+
+**Storage is still a non-issue.** Measured on the SQLite build: 20,000 chat
+messages plus 2,000 forum threads with realistic bodies = **4.4 MB**. InnoDB is
+less compact than SQLite — expect roughly 2–3× that, so call it ~12 MB for the
+same content, plus the indexes in `0004`. A busy 500-unit community still
+generates only tens of MB a year. `node_modules` dropped to ~57 MB with
+better-sqlite3 gone (mysql2 is pure JS and much smaller than the native module
+it replaced). The disk is really for Ubuntu (~3 GB), MySQL's data directory,
+backups and logs: 25 GB is ample, 40 GB is comfortable.
+
+**One thing got simpler:** no native compilation. `better-sqlite3` needed
+`build-essential` and node-gyp, which was the classic first-`npm ci` OOM on a
+small VPS. `mysql2` is pure JavaScript, so that whole failure mode is gone —
+swap is now just prudence, not a prerequisite.
 
 **CPU is the one real constraint, and more cores won't fix it.** Password
 hashing uses `bcryptjs` — pure JavaScript, and called **synchronously**
@@ -220,31 +235,81 @@ done and describes only the app.
 ```bash
 sudo useradd --system --home /opt/propgather --shell /usr/sbin/nologin propgather
 
-sudo mkdir -p /opt/propgather /var/lib/propgather /var/backups/propgather
-sudo chown -R propgather:propgather /opt/propgather /var/lib/propgather /var/backups/propgather
-sudo chmod 750 /var/lib/propgather
+sudo mkdir -p /opt/propgather /var/backups/propgather
+sudo chown -R propgather:propgather /opt/propgather /var/backups/propgather
+sudo chmod 750 /var/backups/propgather
 ```
 
 A dedicated non-login user means a compromised Node process can't read the rest
-of the box.
+of the box. (There's no `/var/lib/propgather` any more — MySQL owns the data
+now, under `/var/lib/mysql`.)
 
 ### 2.3 Clone and install
 
 ```bash
-sudo -u propgather git clone https://github.com/lch99/Prop-Gather.git /opt/propgather
+sudo -u propgather git clone -b production https://github.com/lch99/Prop-Gather.git /opt/propgather
 cd /opt/propgather/backend
 sudo -u propgather npm ci --omit=dev
 ```
 
 `--omit=dev` skips vitest/supertest — the server never runs tests. Run those
-locally before pushing. (If you *do* want to run the suite on the server, use a
-plain `npm ci` instead; the suite is fully offline and touches no real database
-or bucket.)
+locally before pushing. (Unlike the SQLite build, the suite now needs a MySQL
+server, so running it here means pointing `MYSQL_TEST_DATABASE` at a scratch
+database on this box.)
 
-### 2.4 Provision Cloudflare R2 (one-time)
+### 2.4 Install and secure MySQL
 
-Ownership-proof documents never touch this server's disk or SQLite — they go
-browser → R2 via presigned URLs ([util/s3.js](backend/src/util/s3.js)). With
+```bash
+sudo apt install -y mysql-server
+sudo systemctl enable --now mysql
+sudo mysql_secure_installation      # set a root password, remove anon users/test DB
+```
+
+Create the database and an application user scoped to it — the app must never
+connect as root:
+
+```bash
+sudo mysql <<'SQL'
+CREATE DATABASE IF NOT EXISTS propgather
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'propgather'@'localhost'
+  IDENTIFIED BY 'a-strong-password-you-generate';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES
+  ON propgather.* TO 'propgather'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+```
+
+`CREATE, ALTER, INDEX, REFERENCES` are needed because the app applies its own
+migrations at boot. `DROP` is deliberately withheld: nothing in
+`src/db/migrations/` drops a table, so granting it would only widen what a
+compromised app process could destroy.
+
+**Bind to localhost only.** Ubuntu's package already does, but confirm — this is
+what keeps port 3306 off the internet:
+
+```bash
+grep -r "^bind-address" /etc/mysql/    # expect 127.0.0.1
+sudo ss -tlnp | grep 3306              # expect 127.0.0.1:3306, never 0.0.0.0
+```
+
+**On a 2 GB VPS, turn the buffer pool down** or MySQL and Node will fight over
+memory. Create `/etc/mysql/mysql.conf.d/propgather.cnf`:
+
+```ini
+[mysqld]
+innodb_buffer_pool_size = 256M
+max_connections = 50
+```
+
+Then `sudo systemctl restart mysql`. On 4 GB the 128 MB default is fine and you
+can leave this out; the app's own pool is 10 connections
+(`MYSQL_POOL_SIZE`), so `max_connections` mostly guards against runaway clients.
+
+### 2.5 Provision Cloudflare R2 (one-time)
+
+Ownership-proof documents never touch this server's disk or the database — they
+go browser → R2 via presigned URLs ([util/s3.js](backend/src/util/s3.js)). With
 storage unconfigured, every upload returns 500. That's deliberate: a
 misconfigured deployment fails loudly instead of writing files somewhere that
 won't survive a redeploy.
@@ -267,7 +332,7 @@ R2 is private and encrypted at rest by default, so there's no encryption step.
 `s3-encryption.json` and `s3-iam-policy.json` in
 [backend/infra/](backend/infra/) are AWS-S3-only references, unused for R2.
 
-### 2.5 Environment file
+### 2.6 Environment file
 
 ```bash
 sudo install -o propgather -g propgather -m 600 /dev/null /etc/propgather.env
@@ -277,7 +342,13 @@ sudo -u propgather nano /etc/propgather.env
 ```ini
 NODE_ENV=production
 PORT=4000
-DB_PATH=/var/lib/propgather/data.sqlite3
+
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=propgather
+MYSQL_PASSWORD=<the password you set in 2.4>
+MYSQL_DATABASE=propgather
+MYSQL_POOL_SIZE=10
 
 # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 JWT_SECRET=<32-random-bytes-hex>
@@ -292,7 +363,10 @@ AWS_SECRET_ACCESS_KEY=<r2-secret>
 | Variable | Required | Default if unset | Notes |
 |---|---|---|---|
 | `JWT_SECRET` | **Yes** | `dev-secret-do-not-use-in-production` | Signs every auth token. The fallback is a public string in this repo — unset means **anyone can forge an admin token**. Rotating it logs everyone out. |
-| `DB_PATH` | **Yes** | `backend/data.sqlite3` | Point it at `/var/lib/propgather/` so a redeploy can't disturb it. |
+| `MYSQL_HOST` / `MYSQL_PORT` | No | `127.0.0.1` / `3306` | Keep it loopback; MySQL should not listen on a public interface. |
+| `MYSQL_USER` / `MYSQL_PASSWORD` | **Yes** | `root` / empty | The scoped user from 2.4, never root. |
+| `MYSQL_DATABASE` | **Yes** | `propgather` | Created in 2.4, or auto-created if the user has CREATE. |
+| `MYSQL_POOL_SIZE` | No | `10` | Ceiling on concurrent queries. Raising it past MySQL's `max_connections` just moves the queue. |
 | `PORT` | No | `4000` | Must match the nginx `proxy_pass`. |
 | `AWS_S3_BUCKET` | **Yes** | — | R2 bucket name. |
 | `S3_ENDPOINT` | Yes (R2) | — | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`. Omit for real AWS S3. |
@@ -306,7 +380,7 @@ AWS_SECRET_ACCESS_KEY=<r2-secret>
 `/etc/propgather.env`, outside the checkout entirely, so a stray `git add` can't
 reach them.
 
-### 2.6 systemd service
+### 2.7 systemd service
 
 ```bash
 sudo nano /etc/systemd/system/propgather.service
@@ -315,7 +389,8 @@ sudo nano /etc/systemd/system/propgather.service
 ```ini
 [Unit]
 Description=PropGather backend
-After=network.target
+After=network.target mysql.service
+Requires=mysql.service
 
 [Service]
 Type=simple
@@ -334,16 +409,18 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/var/lib/propgather
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-`ProtectSystem=strict` makes the whole filesystem read-only except
-`ReadWritePaths`. SQLite needs to write `data.sqlite3` **plus** its `-wal` and
-`-shm` siblings in that same directory — which is why `DB_PATH` must live under
-`/var/lib/propgather` and not somewhere in `/opt`.
+`Requires=mysql.service` plus `After=` matters: the app runs migrations before it
+listens, so starting before MySQL is up means the boot fails. With `Restart=always`
+it would recover, but you'd see a confusing crash loop in the logs on every reboot.
+
+`ProtectSystem=strict` makes the whole filesystem read-only for this service.
+There's no `ReadWritePaths` any more — the app writes nothing to disk now that
+MySQL owns the data, which is a genuine hardening win over the SQLite setup.
 
 `ExecStart` calls `node` directly rather than `npm start`, so there's no npm
 wrapper process between systemd and the app, and no reliance on
@@ -356,7 +433,7 @@ sudo systemctl status propgather
 journalctl -u propgather -f          # watch the boot; expect the migrate lines
 ```
 
-### 2.7 First boot — migrations, then your first admin
+### 2.8 First boot — migrations, then your first admin
 
 On first start you should see, in `journalctl`:
 
@@ -380,10 +457,14 @@ endpoint. So nothing works until you bootstrap one:
 
 ```bash
 cd /opt/propgather/backend
-sudo -u propgather DB_PATH=/var/lib/propgather/data.sqlite3 \
+sudo -u propgather env $(grep -v '^#' /etc/propgather.env | xargs) \
   ADMIN_PASSWORD='<a real password>' \
   npm run create-admin -- --email=you@propgather.com --name="Your Name"
 ```
+
+The `env $(grep …)` prefix loads the MySQL credentials from the systemd
+environment file — that file reaches the service, not your SSH session, so
+without it the script would try to connect as `root` with no password and fail.
 
 Pass the password via `ADMIN_PASSWORD`, not `--password` — a flag lands in your
 shell history and is visible in `ps` while the command runs. Prefix the command
@@ -458,33 +539,77 @@ sudo crontab -u propgather -e
 0 3 * * *  cd /opt/propgather/backend && /usr/bin/node src/jobs/purge.cli.js >> /var/log/propgather-purge.log 2>&1
 ```
 
-Cron gets no systemd `EnvironmentFile`, so export `DB_PATH` and the R2 vars in
-the crontab or source `/etc/propgather.env` in the command — otherwise it purges
-the wrong (or a nonexistent) database.
+Cron gets no systemd `EnvironmentFile`, so the command must load
+`/etc/propgather.env` itself — otherwise it connects as `root` with no password
+and fails, or worse, reaches a different database.
 
 - [ ] Within 24h of launch, confirm the purge ran — `GET /api/audit-log` or the
       log above.
 
 ### 2.10 Backups
 
-SQLite runs in **WAL mode** ([db/index.js:17](backend/src/db/index.js#L17)), so
-`data.sqlite3`, `-wal` and `-shm` are one unit. **Copying just `data.sqlite3`
-from a running server gives you a backup missing the most recent writes.** Use
-SQLite's own backup, which is safe against a live writer:
+`mysqldump` with `--single-transaction` takes a consistent snapshot without
+locking the tables, because every table here is InnoDB. (The old SQLite advice
+about WAL siblings no longer applies — there is no file to copy.)
+
+Give root's credentials to the client rather than the command line, so they
+never appear in `ps`:
 
 ```bash
-sudo -u propgather crontab -e
+sudo install -m 600 /dev/null /root/.my.cnf
+sudo tee /root/.my.cnf >/dev/null <<'CNF'
+[mysqldump]
+user = root
+password = <your mysql root password>
+CNF
+```
+
+```bash
+sudo crontab -e
 ```
 ```
-30 2 * * *  /usr/bin/sqlite3 /var/lib/propgather/data.sqlite3 ".backup '/var/backups/propgather/propgather-$(date +\%F).sqlite3'"
+30 2 * * *  /usr/bin/mysqldump --single-transaction --routines --triggers propgather | gzip > /var/backups/propgather/propgather-$(date +\%F).sql.gz
 ```
 
 (`%` must be escaped as `\%` in crontab.) Prune old files, and copy them **off
 the server** — a backup on the same disk isn't one.
 
+Restore:
+
+```bash
+gunzip < /var/backups/propgather/propgather-2026-08-16.sql.gz | sudo mysql propgather
+```
+
 Backups contain personal data (names, emails, phone numbers, unit numbers).
 Encrypt them at rest and apply the same retention discipline as production.
 Test a restore at least once; an untested backup isn't a backup.
+
+### 2.10b Inspecting production with MySQL Workbench
+
+**Do not open port 3306.** MySQL stays bound to `127.0.0.1` (2.4); Workbench
+reaches it over your existing SSH access instead, which needs no firewall change
+and no extra credentials exposed to the internet.
+
+In Workbench: **Database → Manage Connections → New**, then
+
+| Field | Value |
+|---|---|
+| Connection Method | **Standard TCP/IP over SSH** |
+| SSH Hostname | `api.propgather.com:22` (or the IP) |
+| SSH Username | your sudo user (`chee`) |
+| SSH Key File | your private key (the one from VPS_SETUP step 2) |
+| MySQL Hostname | `127.0.0.1` — resolved *on the server*, not locally |
+| MySQL Server Port | `3306` |
+| Username / Password | `propgather` / the password from 2.4 |
+
+The tunnel means MySQL still only ever accepts loopback connections. If you
+disabled SSH password auth (VPS_SETUP step 3, which you should have), Workbench
+needs the key file — it will not prompt for a password.
+
+Treat it as read-mostly. Anything that changes schema belongs in a migration
+file, not a Workbench edit: a hand-applied `ALTER` leaves the `migrations` table
+disagreeing with reality, and the next deploy either fails or silently diverges
+from what a fresh database would get.
 
 ### 2.11 Verify
 
@@ -503,7 +628,7 @@ curl -X POST https://api.propgather.com/api/auth/login \
 - [ ] `POST /api/applications/upload-url` (bearer token) returns an `uploadUrl` —
       proves R2 works. A 500 means the S3 env vars are wrong.
 - [ ] `GET /api/audit-log` (admin token) returns entries
-- [ ] `sudo systemctl restart propgather` → data still there (`DB_PATH` check)
+- [ ] `sudo systemctl restart propgather` → data still there (MySQL persistence)
 - [ ] `sudo reboot` → service comes back on its own (`enable` check)
 
 ### 2.12 Updating a deployed server
@@ -552,8 +677,8 @@ used to arrive with it comes from `seed()`, which is now opt-in (Part 4).
 | `0003_content_edits.sql` | `edited_at` on `forum_threads`, `chat_messages`, `petitions`, `defects` | **No — see Part 0** |
 | `0004_performance_indexes.sql` | 18 indexes covering every per-project listing, the duplicate-application check, the retention purge, audit-log filtering, and the erasure cascade | **No — see Part 0** |
 
-Applied to an empty database, all four run clean and leave **nothing behind but
-the schema**:
+Applied to an empty MySQL 8 database, all four run clean and leave **nothing
+behind but the schema**:
 
 ```
 [migrate] applied 0001_init_schema.sql
@@ -561,37 +686,68 @@ the schema**:
 [migrate] applied 0003_content_edits.sql
 [migrate] applied 0004_performance_indexes.sql
 
-tables: 25          non-empty tables: ["migrations"]
-foreign_key_check → []        integrity_check → ok
+tables: 25    explicit indexes: 13    foreign keys: 31
 ```
 
 `migrations` holds the runner's own bookkeeping — one row per applied file — so
 that's the only table with contents on a fresh production database. Everything
 else is empty.
 
-Every query the API runs against a per-project table now resolves through an
-index rather than a table scan (`EXPLAIN QUERY PLAN`, all `SEARCH`, no `SCAN`):
+The full suite — **294 tests across 20 files** — passes against a real MySQL
+database, not a stand-in. (`backend/README.md` still says 163; that number is
+stale.)
 
-```
-forum list      SEARCH forum_threads USING INDEX idx_forum_threads_project
-chat list       SEARCH chat_messages USING INDEX idx_chat_messages_project_channel
-defects list    SEARCH defects USING INDEX idx_defects_project
-dup app check   SEARCH applications USING INDEX idx_applications_user_project
-purge job       SEARCH applications USING INDEX idx_applications_purge_due
-audit filter    SEARCH audit_log USING INDEX idx_audit_log_action_created
-erasure posts   SEARCH forum_threads USING INDEX idx_forum_threads_author
-membership      SEARCH community_memberships USING sqlite_autoindex … (0001's UNIQUE)
-```
+### ⚠️ Migrations are no longer atomic
 
-That last line is why 0004 adds no index for `community_memberships`, the
-hottest query in the app — its `UNIQUE(user_id, project_id)` constraint already
-provides one.
+This is the single most important difference from the SQLite build, and it
+changes how you must write them.
 
-The full suite — **282 tests across 20 files** — passes with these changes.
-(`backend/README.md` still says 163; that number is stale.)
+SQLite wrapped each migration in a transaction, so a file that failed halfway
+rolled back completely. **MySQL implicitly commits before and after every DDL
+statement**, so `ALTER TABLE` cannot be rolled back. A file that fails on its
+third statement leaves the first two applied.
 
-So the schema is deployment-ready. The outstanding item is **committing 0003 and
-0004** (Part 0).
+The runner's defence is that it records a migration only after the *whole* file
+succeeds — so the next boot retries it from the top. That only works if
+re-running the already-applied parts is a no-op, which is why every statement in
+`migrations/` is written to be safely re-runnable:
+
+- `CREATE TABLE IF NOT EXISTS`, `INSERT IGNORE`
+- `ALTER TABLE … MODIFY` (idempotent by nature)
+- every `ADD COLUMN` / `ADD CONSTRAINT` / `CREATE INDEX` guarded against
+  `information_schema`, because MySQL 8 has no `IF NOT EXISTS` for those
+  (MariaDB does; MySQL doesn't)
+
+I verified this rather than assuming it: deleting the `migrations` rows for
+0002–0004 and re-running against an already-migrated database succeeds, with
+`edited_at` present on exactly 4 tables and no duplicated index. **If you write a
+migration whose retry isn't a no-op, a partial failure becomes a boot loop the
+service can't escape.**
+
+### Other MySQL-specific gotchas baked into these files
+
+- **`VARCHAR(64)` ids, not `TEXT`** — MySQL can't index a `TEXT` column without a
+  prefix length, and FK columns must match the referenced type exactly.
+- **Timestamps are `VARCHAR(40)` ISO strings, not `DATETIME`.** The retention
+  purge compares `decided_at <= ?` against an ISO cutoff and routes serialize
+  them straight to JSON. Keep writing ISO strings.
+- **JSON-bearing columns are `TEXT`, not MySQL's `JSON` type** — mysql2 parses
+  `JSON` columns into objects automatically, which would break the explicit
+  `JSON.parse()` the routes do.
+- **`rating` is `DOUBLE`, not `DECIMAL`** — mysql2 returns `DECIMAL` as a string,
+  which would turn `4.6` into `"4.60"` in API responses.
+- **InnoDB auto-indexes every FK column**, which SQLite doesn't. That's why 0004
+  is much smaller here than its SQLite ancestor: seven single-column indexes in
+  the original were pure duplication of what the constraints already create.
+- **No partial indexes.** The SQLite purge index (`… WHERE document_file IS NOT
+  NULL`) has no MySQL equivalent and became a `(status, decided_at)` composite.
+- **`SET @x := …` collides with named placeholders.** mysql2's
+  `namedPlaceholders` parser reads `:=` as a `:name` parameter, so the migration
+  connection turns that option off explicitly. If a future migration mysteriously
+  fails to parse, this is why.
+
+So the schema is deployment-ready. The outstanding item is **committing it**
+(Part 0).
 
 ### How the runner works
 
@@ -609,14 +765,11 @@ Consequences worth knowing before you write one:
   nothing on any existing database — including production — while silently
   changing what a *fresh* database gets. That's how two environments diverge
   without any error. Never edit an applied migration; add a new one.
-- **Each migration is one transaction**, so a failure rolls back fully and the
-  `migrations` row isn't written. A broken migration means the server won't
-  start, which is the right failure mode — but it does mean a bad migration is
-  an outage, not a warning.
-- **`PRAGMA foreign_keys` can't be changed inside one** — SQLite ignores the
-  pragma within a transaction, and `foreign_keys = ON` is set at connection
-  ([db/index.js:18](backend/src/db/index.js#L18)). A table rebuild has to work
-  with FKs enforced, as 0002 does.
+- **A migration is NOT one transaction** — see the warning above. This is the
+  rule that most changes how you write them.
+- **A broken migration is an outage, not a warning.** The server runs migrations
+  before it listens, so a failure means it won't start. That's the right failure
+  mode, but combined with `Restart=always` it presents as a crash loop.
 - **There are no down-migrations.** Rolling back code across a migration leaves
   the schema forward. Usually harmless (older code ignores a new column); across
   a *destructive* migration it needs a restore from backup. Back up before
@@ -624,23 +777,29 @@ Consequences worth knowing before you write one:
 
 ### Adding one
 
-1. `backend/src/db/migrations/0004_short_description.sql`, next number up.
-2. Header comment explaining **why** — the existing three do this, and it's
+1. `backend/src/db/migrations/0005_short_description.sql`, next number up.
+2. Header comment explaining **why** — the existing four do this, and it's
    what makes the schema legible a year later.
-3. Prefer `IF NOT EXISTS` / nullable-with-no-default so the file is safe to
-   re-run and correct for existing rows. SQLite has no `ALTER COLUMN`: to change
-   a column type or nullability you rebuild the table (0002 is the worked
-   example — create `_new`, `INSERT INTO … SELECT`, `DROP`, `RENAME`).
-4. Test against a scratch copy, not your dev database:
+3. **Make every statement safely re-runnable.** `CREATE TABLE IF NOT EXISTS` and
+   `INSERT IGNORE` are enough on their own; `ADD COLUMN`, `ADD CONSTRAINT` and
+   `CREATE INDEX` need an `information_schema` guard, because MySQL 8 has no
+   `IF NOT EXISTS` for them. Copy the `SET @c = (SELECT COUNT(*) …)` /
+   `PREPARE` / `EXECUTE` pattern from 0002 or 0004 verbatim.
+4. Test against a scratch database *and* a production-shaped one:
    ```bash
    cd backend
-   DB_PATH=/tmp/t.sqlite3 npm run migrate     # from empty
-   cp /var/backups/propgather/latest.sqlite3 /tmp/p.sqlite3
-   DB_PATH=/tmp/p.sqlite3 npm run migrate     # against production-shaped data
+   MYSQL_DATABASE=pg_scratch npm run migrate      # from empty
+   
+   # then against real-shaped data restored from a backup
+   sudo mysql -e "CREATE DATABASE pg_rehearse"
+   gunzip < /var/backups/propgather/latest.sql.gz | sudo mysql pg_rehearse
+   MYSQL_DATABASE=pg_rehearse npm run migrate
    ```
    The second run is the one that catches real problems — an empty database
    never violates a constraint.
-5. `npm test`, then **`git add` the file explicitly** (Part 0).
+5. **Test the retry path too**, since it's now load-bearing: delete your new
+   file's row from `migrations` and run again. It must succeed, not error.
+6. `npm test`, then **`git add` the file explicitly** (Part 0).
 
 ---
 
@@ -727,11 +886,12 @@ document is uploaded.
   pattern; someone has to read `GET /api/audit-log`. PDPA's 72-hour breach
   clock depends on detection — see
   [PDPA_COMPLIANCE_CHECKLIST.md](PDPA_COMPLIANCE_CHECKLIST.md).
-- **No `ANALYZE` is ever run.** 0004's indexes are chosen well enough that
-  SQLite picks them without statistics, but running `ANALYZE` once after the
-  first few thousand rows land gives the planner real distributions to work
-  with. It's a one-liner, not a migration:
-  `sqlite3 /var/lib/propgather/data.sqlite3 'ANALYZE;'`
+- **InnoDB samples statistics automatically**, so there's no `ANALYZE` step to
+  schedule the way SQLite needed. If a query plan ever looks wrong after a large
+  data change, `ANALYZE TABLE <name>;` refreshes it by hand.
+- **MySQL's own hardening** is now part of your surface area: keep it bound to
+  `127.0.0.1` (2.4), keep the app user off `root`, and let
+  `unattended-upgrades` patch `mysql-server` along with everything else.
 
 ---
 
@@ -758,9 +918,12 @@ Not done yet, and not needed for either deploy above. When it happens:
 | `ERR_MODULE_NOT_FOUND` on boot, clean local tests | untracked file never committed | Part 0 — `git add -A` |
 | Pages site blank / 404s on JS and CSS | `base` mismatch | Check `base` vs. the URL; inspect `dist/index.html` |
 | Deployed site doesn't match the repo | `deploy` published a stale local `dist/` | Push `master`, rebuild, redeploy |
-| `npm ci` fails on `better-sqlite3` | missing native toolchain | `sudo apt install build-essential python3` |
-| Service won't start, `journalctl` shows SQLITE_CANTOPEN | `DB_PATH` outside `ReadWritePaths` | Point it at `/var/lib/propgather`, or add the path to the unit |
-| Database empty after redeploy | `DB_PATH` inside the checkout | Move to `/var/lib/propgather` |
+| `ER_ACCESS_DENIED_ERROR` on boot | wrong `MYSQL_USER`/`MYSQL_PASSWORD`, or the user isn't `@localhost` | Re-check the GRANT in 2.4 |
+| `ER_BAD_DB_ERROR` on boot | database missing and the app user lacks CREATE | Create it by hand (2.4) |
+| Crash loop on every reboot | app started before MySQL was ready | `Requires=mysql.service` + `After=` in the unit (2.7) |
+| Migration fails, then fails again forever | a statement in it isn't re-runnable | See "Migrations are no longer atomic" in Part 3 — add the `information_schema` guard |
+| `Named query contains placeholders…` | SQL uses `:=` and hit the named-placeholder parser | Use `=` in `SET`, or run it on the migration connection |
+| Emoji or accented names come back mangled | table or column not `utf8mb4` | `SHOW CREATE TABLE` — 0001 sets `utf8mb4`/`utf8mb4_unicode_ci` throughout |
 | Uploads 500 on `/api/applications/upload-url` | R2 env vars missing/wrong | Check all five in 2.5; there's no local-disk fallback by design |
 | Browser upload fails CORS, server logs nothing | R2 bucket CORS missing your origin | Apply [s3-cors.json](backend/infra/s3-cors.json) with the right origins |
 | Everyone logged out after a deploy | `JWT_SECRET` changed or unset | Set it explicitly, keep it stable |
@@ -813,5 +976,7 @@ sudo systemctl status propgather
 sudo systemctl restart propgather
 journalctl -u propgather -f
 journalctl -u propgather -n 100 --no-pager
-sudo -u propgather sqlite3 /var/lib/propgather/data.sqlite3 ".tables"
+sudo mysql propgather -e "SHOW TABLES"
+sudo mysql propgather -e "SELECT name, applied_at FROM migrations"
+sudo systemctl status mysql
 ```

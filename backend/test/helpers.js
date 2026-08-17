@@ -1,18 +1,59 @@
 import request from 'supertest'
 import { createApp } from '../src/app.js'
-import { resetDb } from '../src/db/index.js'
+import { getDb } from '../src/db/index.js'
+import { runMigrations } from '../src/db/migrate.js'
 import { seed } from '../src/db/seed.js'
 import { _resetRateLimits } from '../src/middleware/rateLimit.js'
 
 let counter = 0
+let migrated = false
+let tableNames = null
 
-// Fresh in-memory DB + seed data + a new express app instance. Call in beforeEach
-// so every test starts from an identical, isolated slate. Also clears the login
+async function tables() {
+  if (tableNames) return tableNames
+  const rows = await getDb().all(
+    `SELECT TABLE_NAME AS t FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME <> 'migrations'`
+  )
+  tableNames = rows.map(r => r.t)
+  return tableNames
+}
+
+// Fresh database state + seed data + a new express app instance. Call in
+// beforeEach so every test starts from an identical slate. Also clears the login
 // rate limiter's module-level state, which otherwise persists across tests in
 // the same file (many tests here log in as ADMIN repeatedly).
-export function freshApp() {
-  resetDb()
-  seed()
+//
+// Unlike the SQLite version this replaces, there is no `:memory:` database to
+// throw away — tests run against a real MySQL schema (MYSQL_DATABASE in
+// vitest.config.js, `propgather_test` by default) so they exercise the dialect
+// actually deployed. Isolation therefore means emptying the tables:
+//
+//   * DELETE, not TRUNCATE — these tables hold at most a few hundred rows, and
+//     TRUNCATE is DDL, so it implicitly commits and is slower here.
+//   * FOREIGN_KEY_CHECKS is toggled on ONE pinned connection. The setting is
+//     session-scoped, so doing it through the pool could disable checks on one
+//     connection and delete on another that still has them on.
+//
+// vitest.config.js sets fileParallelism:false because every test file shares
+// this one database — running two files at once would have them wiping each
+// other's rows mid-test.
+export async function freshApp() {
+  if (!migrated) {
+    await runMigrations()
+    migrated = true
+  }
+
+  const conn = await getDb().raw.getConnection()
+  try {
+    await conn.query('SET FOREIGN_KEY_CHECKS = 0')
+    for (const t of await tables()) await conn.query(`DELETE FROM \`${t}\``)
+    await conn.query('SET FOREIGN_KEY_CHECKS = 1')
+  } finally {
+    conn.release()
+  }
+
+  await seed()
   _resetRateLimits()
   return createApp()
 }

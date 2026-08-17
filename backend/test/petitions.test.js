@@ -5,7 +5,7 @@ let app
 let residentToken
 
 beforeEach(async () => {
-  app = freshApp()
+  app = await freshApp()
   residentToken = await login(app, RESIDENT.email, RESIDENT.password)
 })
 

@@ -4,7 +4,7 @@ import { freshApp, authed, login, loginWithId, ADMIN, sampleDocumentFile } from 
 import { CHANNELS } from '../src/routes/chat.js'
 
 let app
-beforeEach(() => { app = freshApp() })
+beforeEach(async () => { app = await freshApp() })
 
 async function registerUser(email, name = 'Journey User') {
   const res = await request(app).post('/api/auth/register').send({ name, email, password: 'password123' })

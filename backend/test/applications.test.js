@@ -4,7 +4,7 @@ import { freshApp, authed, login, loginWithId, ADMIN, outsider, sampleDocumentFi
 import { s3Mock } from './setup.js'
 
 let app
-beforeEach(() => { app = freshApp() })
+beforeEach(async () => { app = await freshApp() })
 
 async function registerUser(app, email) {
   const res = await request(app).post('/api/auth/register').send({ name: 'Applicant', email, password: 'password123' })

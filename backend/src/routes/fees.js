@@ -1,16 +1,20 @@
 import { Router } from 'express'
 import { getDb } from '../db/index.js'
 import { requireAuth, requireMembership } from '../middleware/auth.js'
+import { wrap } from '../util/asyncHandler.js'
 
 export const feesRouter = Router({ mergeParams: true })
 
-feesRouter.get('/', requireAuth, requireMembership, (req, res) => {
+feesRouter.get('/', requireAuth, requireMembership, wrap(async (req, res) => {
   const db = getDb()
-  const tracker = db.prepare('SELECT * FROM fee_tracker WHERE project_id = ?').get(req.params.projectId)
+  const tracker = await db.get('SELECT * FROM fee_tracker WHERE project_id = ?', [req.params.projectId])
   if (!tracker) return res.json(null)
 
-  const history = db.prepare('SELECT month, amount FROM fee_history WHERE project_id = ? ORDER BY month').all(req.params.projectId)
-  const myPayments = db.prepare('SELECT month, amount, status FROM fee_payments WHERE project_id = ? AND user_id = ? ORDER BY month').all(req.params.projectId, req.user.id)
+  const history = await db.all('SELECT month, amount FROM fee_history WHERE project_id = ? ORDER BY month', [req.params.projectId])
+  const myPayments = await db.all(
+    'SELECT month, amount, status FROM fee_payments WHERE project_id = ? AND user_id = ? ORDER BY month',
+    [req.params.projectId, req.user.id]
+  )
 
   res.json({
     sinkingFund: tracker.sinking_fund,
@@ -20,4 +24,4 @@ feesRouter.get('/', requireAuth, requireMembership, (req, res) => {
     history,
     myPayments
   })
-})
+}))

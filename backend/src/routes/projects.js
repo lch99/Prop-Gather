@@ -7,10 +7,11 @@ import { requireAuth, requireRole } from '../middleware/auth.js'
 import { toProject } from '../util/serialize.js'
 import { conflict, notFound } from '../util/errors.js'
 import { recordAudit } from '../util/audit.js'
+import { wrap } from '../util/asyncHandler.js'
 
 export const projectsRouter = Router()
 
-projectsRouter.get('/', (req, res) => {
+projectsRouter.get('/', wrap(async (req, res) => {
   const { state, type, search } = req.query
   const db = getDb()
 
@@ -25,15 +26,15 @@ projectsRouter.get('/', (req, res) => {
   }
   sql += ' ORDER BY name'
 
-  const rows = db.prepare(sql).all(...params)
+  const rows = await db.all(sql, params)
   res.json(rows.map(toProject))
-})
+}))
 
-projectsRouter.get('/:id', (req, res, next) => {
-  const row = getDb().prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id)
+projectsRouter.get('/:id', wrap(async (req, res, next) => {
+  const row = await getDb().get('SELECT * FROM projects WHERE id = ?', [req.params.id])
   if (!row) return next(notFound("We couldn't find that community."))
   res.json(toProject(row))
-})
+}))
 
 const createSchema = z.object({
   name: z.string().trim().min(1, 'Community name is required').max(200),
@@ -55,30 +56,31 @@ const createSchema = z.object({
 // Admins add communities directly — no application or request needed. This is the
 // counterpart to POST /api/community-requests, which is what a resident submits
 // when the community they live in isn't on the platform yet.
-projectsRouter.post('/', requireAuth, requireRole('admin'), validate(createSchema), (req, res, next) => {
+projectsRouter.post('/', requireAuth, requireRole('admin'), validate(createSchema), wrap(async (req, res, next) => {
   const { name, type, state, city, address, ownerCount, activityLevel, units, blocks, floorsPerBlock } = req.body
   const db = getDb()
 
   // Two rows for the same building would split its residents across two private
   // spaces — each invisible to the other — so the same name in the same city is a
   // conflict rather than a second community.
-  const existing = db.prepare(
-    'SELECT id, name, city FROM projects WHERE LOWER(name) = LOWER(?) AND LOWER(city) = LOWER(?)'
-  ).get(name, city)
+  const existing = await db.get(
+    'SELECT id, name, city FROM projects WHERE LOWER(name) = LOWER(?) AND LOWER(city) = LOWER(?)',
+    [name, city]
+  )
   if (existing) {
     return next(conflict(`${existing.name} is already on PropGather in ${existing.city}. Open the existing community instead of adding a second one.`))
   }
 
   const projectId = id('p')
-  db.prepare(`
+  await db.run(`
     INSERT INTO projects (id, name, type, state, city, address, owner_count, activity_level, units, blocks, floors_per_block, latest_thread, active_offer_banner)
-    VALUES (@id, @name, @type, @state, @city, @address, @ownerCount, @activityLevel, @units, @blocks, @floorsPerBlock, NULL, 0)
-  `).run({
+    VALUES (:id, :name, :type, :state, :city, :address, :ownerCount, :activityLevel, :units, :blocks, :floorsPerBlock, NULL, 0)
+  `, {
     id: projectId, name, type, state, city, address,
     ownerCount, activityLevel, units, blocks: JSON.stringify(blocks), floorsPerBlock
   })
 
-  recordAudit(db, {
+  await recordAudit(db, {
     actorUserId: req.user.id,
     actorRole: req.user.role,
     action: 'project.created',
@@ -88,5 +90,5 @@ projectsRouter.post('/', requireAuth, requireRole('admin'), validate(createSchem
     metadata: { name, type, city, state }
   })
 
-  res.status(201).json(toProject(db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId)))
-})
+  res.status(201).json(toProject(await db.get('SELECT * FROM projects WHERE id = ?', [projectId])))
+}))

@@ -27,7 +27,7 @@ setup is "compliant."
   Pages demo). It runs against `src/api.js`, an in-memory mock API seeded
   from `src/demoData.js`. All mutations (upvotes, posts, votes, verification
   decisions) live only in memory and reset on page refresh.
-- **`backend/`** — an Express + better-sqlite3 server implementing the same
+- **`backend/`** — an Express + MySQL 8 (`mysql2`) server implementing the same
   data contract with real persistence, JWT auth, and per-community access
   control. **The frontend does not call it yet.** Treat the two as separate
   efforts unless a task explicitly asks to wire them together.
@@ -78,22 +78,33 @@ both places unless the task is about that integration.
   after a **verified community membership** for that project (granted via
   `POST /api/applications` → `POST /api/applications/:id/decision`). Admins
   bypass the membership check everywhere. See `backend/src/middleware/`.
-- SQLite file at `DB_PATH` (default `./data.sqlite3`); delete it to reset —
-  migrations and the seed rerun on next start. Schema is built from ordered
-  `.sql` files in `backend/src/db/migrations/` (tracked in a `migrations`
-  table so each runs once), applied automatically via `getDb()` or manually
-  with `npm run migrate`. New schema changes go in a new
-  `NNNN_description.sql` file — never edit an already-applied one.
-- Tests (`backend/test/`, vitest + supertest) run against an isolated
-  in-memory DB (`DB_PATH=:memory:`) with lowered bcrypt cost
-  (`BCRYPT_ROUNDS=4`) for speed — never lower the real cost factor (10) used
-  outside tests.
+- **Every DB call is async.** `src/db/index.js` exposes `db.get/all/run` plus
+  `withTransaction(async tx => …)` over a `mysql2` pool — shaped like the
+  `better-sqlite3` idioms they replaced, so route SQL stayed unchanged. Named
+  params are `:name`, not `@name`. Async route handlers must be wrapped in
+  `wrap()` (`src/util/asyncHandler.js`) or Express 4 swallows the rejection and
+  the request hangs.
+- MySQL 8 via `MYSQL_*` env vars. Schema is built from ordered `.sql` files in
+  `backend/src/db/migrations/` (tracked in a `migrations` table so each runs
+  once), applied by `runMigrations()` at boot or `npm run migrate`. New schema
+  changes go in a new `NNNN_description.sql` file — never edit an applied one.
+  **Migrations are not atomic** (MySQL commits around DDL), so every statement
+  must be safely re-runnable: `IF NOT EXISTS`/`INSERT IGNORE`, or an
+  `information_schema` guard for `ADD COLUMN`/`ADD CONSTRAINT`/`CREATE INDEX`,
+  which MySQL 8 has no `IF NOT EXISTS` for. A retry that isn't a no-op becomes
+  a boot loop.
+- Tests (`backend/test/`, vitest + supertest) need a **real MySQL** —
+  `propgather_test`, emptied and reseeded before each test by `freshApp()`.
+  There's no `:memory:` equivalent, and testing on a different engine than you
+  deploy would hide dialect bugs. `fileParallelism` is off because every file
+  shares that database. Bcrypt cost is lowered (`BCRYPT_ROUNDS=4`) for speed —
+  never lower the real cost factor (10) used outside tests.
 - One route file per resource in `backend/src/routes/`, mirrored by one test
   file per resource in `backend/test/` covering positive paths, validation
   errors, and 401/403/404/409 access control. Follow that pairing for new
   resources.
 - Sensitive documents (currently just verification uploads) live in S3, never
-  as blobs in SQLite — see `backend/src/util/s3.js` for the presigned
+  as blobs in the database — see `backend/src/util/s3.js` for the presigned
   upload/download URL pattern and `backend/infra/` for the bucket config.
   Any admin action that touches personal data should call
   `recordAudit()` (`backend/src/util/audit.js`) so it shows up in
@@ -107,7 +118,7 @@ both places unless the task is about that integration.
 npm run dev            # frontend dev server (root)
 npm run build           # frontend production build (root)
 cd backend && npm run dev    # backend dev server
-cd backend && npm test        # backend test suite
+cd backend && npm test        # backend test suite (needs local MySQL)
 ```
 
 There is currently no frontend test suite — verify UI changes by running

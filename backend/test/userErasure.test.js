@@ -7,7 +7,7 @@ let app
 let adminToken
 
 beforeEach(async () => {
-  app = freshApp()
+  app = await freshApp()
   adminToken = await login(app, ADMIN.email, ADMIN.password)
   s3Mock.deleteObject.mockClear()
 })
@@ -135,8 +135,8 @@ describe('DELETE /api/auth/users/:id — PDPA erasure', () => {
     // A second admin decides an application, then is erased.
     const db = (await import('../src/db/index.js')).getDb()
     const { hashPassword } = await import('../src/util/auth.js')
-    db.prepare('INSERT INTO users (id, name, email, password_hash, role, created_at) VALUES (?,?,?,?,?,?)')
-      .run('usr_admin2', 'Second Admin', 'admin2@propgather.com', hashPassword('admin123'), 'admin', new Date().toISOString())
+    await db.run('INSERT INTO users (id, name, email, password_hash, role, created_at) VALUES (?,?,?,?,?,?)',
+      ['usr_admin2', 'Second Admin', 'admin2@propgather.com', hashPassword('admin123'), 'admin', new Date().toISOString()])
     const admin2Token = await login(app, 'admin2@propgather.com', 'admin123')
 
     const applicant = await outsider(app)
