@@ -107,7 +107,7 @@ export default function Layout({ children }) {
         {children}
       </main>
       <footer style={{ textAlign: 'center', padding: '20px 0', color: C.textFaint, fontSize: 12 }}>
-        PropGather.com demo prototype — mock data only, not for production use.
+        © {new Date().getFullYear()} PropGather.com
         {' · '}
         <Link to="/contact" style={{ color: C.textFaint, textDecoration: 'underline' }}>Contact Us</Link>
         {' · '}
