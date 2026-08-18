@@ -1,20 +1,13 @@
 // MySQL connection pool and the small query surface the rest of the app uses.
 //
-// This replaces better-sqlite3. The important consequence is that every query
-// is now asynchronous: better-sqlite3 returned rows directly, mysql2 returns
-// promises, so every caller awaits and every function containing one is async.
+// Every query is asynchronous, so callers await and any function containing one
+// is async:
 //
-// The helpers below deliberately mirror the better-sqlite3 idioms they replaced,
-// so the SQL in routes stayed byte-for-byte identical through the migration and
-// the test suite remained a meaningful check on it:
+//   await db.get(sql, [a, b])   ->  one row
+//   await db.all(sql, [a])      ->  all rows
+//   await db.run(sql, [a])      ->  { changes, insertId }
 //
-//   db.prepare(sql).get(a, b)   ->  await db.get(sql, [a, b])
-//   db.prepare(sql).all(a)      ->  await db.all(sql, [a])
-//   db.prepare(sql).run(a)      ->  await db.run(sql, [a])   -> { changes, insertId }
-//
-// Named parameters carry over too. better-sqlite3 bound `@name` from an object;
-// mysql2 does the same with `:name` when namedPlaceholders is on, so those call
-// sites only needed the sigil changed.
+// Named parameters are `:name`, bound from an object (namedPlaceholders).
 import mysql from 'mysql2/promise'
 
 let pool

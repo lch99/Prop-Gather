@@ -5,14 +5,14 @@ import { id } from '../util/ids.js'
 import { validate } from '../middleware/validate.js'
 import { requireAuth, requireMembership } from '../middleware/auth.js'
 import { blockSensitiveContent } from '../middleware/sensitiveContent.js'
-import { notFound, forbidden, conflict } from '../util/errors.js'
+import { badRequest, notFound, forbidden, conflict } from '../util/errors.js'
 import { recordAudit } from '../util/audit.js'
 import { wrap } from '../util/asyncHandler.js'
 
 export const defectsRouter = Router({ mergeParams: true })
 
-// Matches the lifecycle the frontend already renders (see chipColor usage in
-// the defects UI and the seeded values in src/demoData.js).
+// Matches the lifecycle the frontend renders (see chipColor usage in the
+// defects UI, and the seeded values in src/db/seed.js).
 const STATUSES = ['Open', 'Acknowledged', 'In Progress', 'Resolved']
 
 // A defect PATCH carries two different kinds of change with different rules:
@@ -29,13 +29,28 @@ const updateSchema = z.object({
   { message: 'Please change the status, title or description before saving.' }
 )
 
+// Same shape as forum threads and chat messages — the frontend's shared
+// useAttachments hook produces it for all three.
+const attachmentSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+  size: z.number(),
+  dataUrl: z.string()
+})
+
+const MAX_ATTACHMENTS_TOTAL_BYTES = 10 * 1024 * 1024
+
 const createSchema = z.object({
   title: z.string().trim().min(1, 'Title is required').max(200),
   description: z.string().trim().min(1, 'Description is required').max(4000),
   category: z.string().trim().min(1, 'Category is required').max(80),
   block: z.string().trim().max(40).optional().default('-'),
   floorRange: z.string().trim().max(40).optional().default('-'),
-  unit: z.string().trim().max(40).optional().default('-')
+  unit: z.string().trim().max(40).optional().default('-'),
+  // Photos of the defect. Not editable afterwards, matching forum threads: a
+  // report whose photo was wrong should be deleted and re-filed rather than have
+  // different evidence appear under a record others have already matched against.
+  attachments: z.array(attachmentSchema).max(6, 'You can attach up to 6 files.').optional().default([])
 })
 
 // Reporter name is joined rather than looked up per row — see the same note in
@@ -59,6 +74,9 @@ function serialize(row) {
     reportedAt: row.reported_at,
     matchingUnits: row.matching_units,
     description: row.description,
+    // NULL for every row created before 0005_defect_attachments.sql, and for
+    // seeded rows — the column can't carry a DEFAULT, so [] is applied here.
+    attachments: JSON.parse(row.attachments || '[]'),
     editedAt: row.edited_at || null
   }
 }
@@ -70,16 +88,24 @@ defectsRouter.get('/', requireAuth, requireMembership, wrap(async (req, res) => 
   res.json(rows.map(serialize))
 }))
 
-defectsRouter.post('/', requireAuth, requireMembership, validate(createSchema), blockSensitiveContent('title', 'description'), wrap(async (req, res) => {
+defectsRouter.post('/', requireAuth, requireMembership, validate(createSchema), blockSensitiveContent('title', 'description'), wrap(async (req, res, next) => {
   const db = getDb()
   const defectId = id('def')
   const reportedAt = new Date().toISOString().slice(0, 10)
-  const { title, description, category, block, floorRange, unit } = req.body
+  const { title, description, category, block, floorRange, unit, attachments } = req.body
+
+  // Same 10 MB ceiling as forum threads. The per-file limit is enforced by the
+  // frontend picker; this is the one that matters server-side, since attachments
+  // are base64 data URLs stored inline and express.json() caps a body at 15 MB.
+  const totalBytes = attachments.reduce((sum, a) => sum + (a.size || 0), 0)
+  if (totalBytes > MAX_ATTACHMENTS_TOTAL_BYTES) {
+    return next(badRequest('Your attachments add up to more than 10 MB. Please remove one or attach smaller files.'))
+  }
 
   await db.run(`
-    INSERT INTO defects (id, project_id, title, block, floor_range, unit, category, status, reported_by_user_id, reported_at, matching_units, description)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'Open', ?, ?, 1, ?)
-  `, [defectId, req.params.projectId, title, block, floorRange, unit, category, req.user.id, reportedAt, description])
+    INSERT INTO defects (id, project_id, title, block, floor_range, unit, category, status, reported_by_user_id, reported_at, matching_units, description, attachments)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'Open', ?, ?, 1, ?, ?)
+  `, [defectId, req.params.projectId, title, block, floorRange, unit, category, req.user.id, reportedAt, description, JSON.stringify(attachments)])
 
   res.status(201).json(serialize(await fetchDefect(db, defectId)))
 }))

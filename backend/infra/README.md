@@ -10,7 +10,7 @@ use the dashboard. `s3-iam-policy.json` and `s3-encryption.json` are AWS-only
 (R2 uses scoped R2 API tokens instead of IAM, and encrypts at rest by default).
 
 Ownership-proof documents (`applications.document_file`) are stored in S3, never
-in this repo's SQLite database — see `backend/src/util/s3.js`. Uploads/downloads
+in this repo's database — see `backend/src/util/s3.js`. Uploads/downloads
 go through short-lived presigned URLs (5 min upload, 15 min download); the app
 never touches the raw file bytes.
 

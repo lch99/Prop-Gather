@@ -22,6 +22,7 @@ export default function ChatTab({ projectId }) {
   const [editingId, setEditingId] = useState(null) // message id currently open in the inline editor
   const [editDraft, setEditDraft] = useState('')
   const [editError, setEditError] = useState('')
+  const [sendError, setSendError] = useState('')
   const { attachments, addFiles, removeAttachment, error: uploadError, reset: resetAttachments } = useAttachments(4)
   const bottomRef = useRef(null)
 
@@ -72,10 +73,21 @@ export default function ChatTab({ projectId }) {
   const send = async () => {
     if (!text.trim() && attachments.length === 0) return
     if (blockedByPii) return
-    const msg = await api.sendChatMessage(projectId, active, text.trim(), attachments)
-    setMessages(m => [...m, msg])
-    setText('')
-    resetAttachments()
+    // The server requires message text even when files are attached, so say that
+    // rather than letting the request come back as a bare 400.
+    if (!text.trim()) {
+      setSendError('Please add a short message to go with your file.')
+      return
+    }
+    setSendError('')
+    try {
+      const msg = await api.sendChatMessage(projectId, active, text.trim(), attachments)
+      setMessages(m => [...m, msg])
+      setText('')
+      resetAttachments()
+    } catch (err) {
+      setSendError(err.message)
+    }
   }
 
   // You can remove your own message — mirrors the forum "delete your post"
@@ -191,6 +203,11 @@ export default function ChatTab({ projectId }) {
           <div ref={bottomRef} />
         </div>
         <div style={{ padding: 12, borderTop: `1px solid ${C.border}`, display: 'grid', gap: 8 }}>
+          {sendError && (
+            <div role="alert" style={{ fontSize: 13, color: C.danger, background: C.dangerBg, padding: '8px 10px', borderRadius: C.radiusSm }}>
+              {sendError}
+            </div>
+          )}
           {(attachments.length > 0 || uploadError) && (
             <AttachmentPicker
               attachments={attachments}

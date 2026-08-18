@@ -15,6 +15,7 @@ export default function DefectsPanel({ projectId, project }) {
   const [defects, setDefects] = useState([])
   const [showNew, setShowNew] = useState(false)
   const [form, setForm] = useState({ title: '', block: '', floorRange: '', unit: '', category: 'General', description: '' })
+  const [error, setError] = useState('')
   const { attachments, addFiles, removeAttachment, error: uploadError, reset: resetAttachments } = useAttachments()
 
   const load = () => api.getDefects(projectId).then(setDefects)
@@ -23,7 +24,16 @@ export default function DefectsPanel({ projectId, project }) {
   const create = async () => {
     if (!form.title || !form.description) return
     if (hasSensitiveContent(form.title, form.description)) return
-    await api.createDefect(projectId, { ...form, attachments })
+    // Photos are stored now, so the server's 10 MB total ceiling is reachable —
+    // silently swallowing that rejection would leave the form open with no
+    // explanation and the report unfiled.
+    setError('')
+    try {
+      await api.createDefect(projectId, { ...form, attachments })
+    } catch (err) {
+      setError(err.message)
+      return
+    }
     setForm({ title: '', block: '', floorRange: '', unit: '', category: 'General', description: '' })
     resetAttachments()
     setShowNew(false)
@@ -69,6 +79,14 @@ export default function DefectsPanel({ projectId, project }) {
             />
           </div>
           <SensitiveContentNotice values={[form.title, form.description]} />
+          {error && (
+            <div role="alert" style={{
+              gridColumn: '1 / -1', fontSize: 13, color: C.danger, background: C.dangerBg,
+              padding: '8px 10px', borderRadius: C.radiusSm
+            }}>
+              {error}
+            </div>
+          )}
           <div>
             <button
               style={{ ...button('primary'), ...(hasSensitiveContent(form.title, form.description) ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}

@@ -24,10 +24,10 @@ async function tables() {
 // rate limiter's module-level state, which otherwise persists across tests in
 // the same file (many tests here log in as ADMIN repeatedly).
 //
-// Unlike the SQLite version this replaces, there is no `:memory:` database to
-// throw away — tests run against a real MySQL schema (MYSQL_DATABASE in
-// vitest.config.js, `propgather_test` by default) so they exercise the dialect
-// actually deployed. Isolation therefore means emptying the tables:
+// There is no in-memory database to throw away — tests run against a real MySQL
+// schema (MYSQL_DATABASE in vitest.config.js, `propgather_test` by default) so
+// they exercise the dialect actually deployed. Isolation therefore means
+// emptying the tables:
 //
 //   * DELETE, not TRUNCATE — these tables hold at most a few hundred rows, and
 //     TRUNCATE is DDL, so it implicitly commits and is slower here.

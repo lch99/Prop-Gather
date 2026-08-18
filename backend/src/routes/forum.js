@@ -44,10 +44,9 @@ function attachAttachmentsTotalSize(attachments) {
   return total <= MAX_TOTAL
 }
 
-// Author details and the upvote tally come back with the thread row. The
-// synchronous version issued a separate query per thread for each — plus one per
-// poll option — so listing a busy forum was hundreds of queries. In-process
-// against SQLite that was invisible; against MySQL each one is a round trip.
+// Author details and the upvote tally come back with the thread row. Querying
+// per thread — plus one per poll option — would make listing a busy forum
+// hundreds of round trips.
 const THREAD_SELECT = `
   SELECT t.*,
          u.name  AS author_name,

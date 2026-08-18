@@ -1,16 +1,24 @@
-import { createContext, useCallback, useContext, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { api } from './api'
+import { clearToken, setSessionExpiredHandler, setToken } from './apiClient'
 
 const STORAGE_KEY = 'pg_user'
 const AuthContext = createContext(null)
 
-// Demo accounts — the only credentials with a fixed role. Any other email is
-// allowed too (treated as a resident) so the prototype stays easy to explore.
+// Accounts created by the backend's demo seed (`SEED_DEMO_DATA=true`, see
+// backend/src/db/seed.js). They exist in a local dev database and nowhere else —
+// a production database starts empty and gets its first admin from
+// `npm run create-admin`. LoginPage only offers them when
+// VITE_SHOW_DEMO_LOGINS is on, which is dev-only by default.
 export const DEMO_ACCOUNTS = [
   { role: 'resident', label: 'Resident', name: 'Alex Lim', email: 'resident@propgather.com', password: 'resident123' },
   { role: 'admin', label: 'Admin', name: 'Platform Admin', email: 'admin@propgather.com', password: 'admin123' }
 ]
+
+export const SHOW_DEMO_LOGINS = import.meta.env.VITE_SHOW_DEMO_LOGINS
+  ? import.meta.env.VITE_SHOW_DEMO_LOGINS === 'true'
+  : import.meta.env.DEV
 
 function readStored() {
   try {
@@ -21,55 +29,92 @@ function readStored() {
   }
 }
 
+// The profile is cached next to the token purely so a refresh paints a signed-in
+// header immediately. The token is the actual credential; this copy is a hint
+// that gets replaced by whatever /auth/me says.
+function persist(profile, remember) {
+  const store = remember ? localStorage : sessionStorage
+  const other = remember ? sessionStorage : localStorage
+  store.setItem(STORAGE_KEY, JSON.stringify(profile))
+  other.removeItem(STORAGE_KEY)
+}
+
+function forget() {
+  localStorage.removeItem(STORAGE_KEY)
+  sessionStorage.removeItem(STORAGE_KEY)
+}
+
 export function AuthProvider({ children }) {
-  // Initialise synchronously from storage so a refresh keeps you signed in
+  // Initialised synchronously from storage so a refresh keeps you signed in
   // without a logged-out flicker on the first paint.
   const [user, setUser] = useState(readStored)
-
-  const login = useCallback(async ({ email, password, remember = true }) => {
-    // Demo auth. The two DEMO_ACCOUNTS have fixed roles and require the right
-    // password; any other email is accepted as a resident so the prototype
-    // stays easy to explore.
-    const normalized = (email || '').trim().toLowerCase()
-    const account = DEMO_ACCOUNTS.find(a => a.email === normalized)
-    if (account && password !== account.password) {
-      throw new Error('That password is incorrect for this demo account.')
+  // Which storage the current session lives in, so refresh()/logout() keep
+  // honouring the "keep me signed in" choice made at login.
+  const [remember, setRemember] = useState(() => {
+    try {
+      return !!localStorage.getItem(STORAGE_KEY)
+    } catch {
+      return true
     }
+  })
 
-    let profile
-    if (account) {
-      profile = { id: account.role, name: account.name, email: account.email, role: account.role }
-    } else {
-      // Unknown email — treat as a resident. Pull the canonical demo resident
-      // from the API so the rest of the app stays consistent, falling back to
-      // a lightweight profile if the backend isn't running.
-      try {
-        const me = await api.getMe()
-        profile = { id: me.id, name: me.name, email: normalized || me.email, role: 'resident' }
-      } catch {
-        profile = { id: 'guest', name: (normalized.split('@')[0] || 'Resident'), email: normalized, role: 'resident' }
-      }
-    }
+  // A token the server no longer accepts (expired, or the account was erased)
+  // has to clear the cached profile too, or the UI stays "signed in" and 401s on
+  // every request. RequireAuth then bounces to /login on the next render.
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      forget()
+      setUser(null)
+    })
+    return () => setSessionExpiredHandler(null)
+  }, [])
 
-    const store = remember ? localStorage : sessionStorage
-    const other = remember ? sessionStorage : localStorage
-    store.setItem(STORAGE_KEY, JSON.stringify(profile))
-    other.removeItem(STORAGE_KEY)
+  const login = useCallback(async ({ email, password, remember: keep = true }) => {
+    const { token, user: profile } = await api.login((email || '').trim().toLowerCase(), password)
+    setToken(token, { remember: keep })
+    persist(profile, keep)
+    setRemember(keep)
     setUser(profile)
     return profile
   }, [])
 
+  // Creates the account and signs in with the token the server returns, so the
+  // registration flow can immediately upload a document (which needs auth).
+  const signup = useCallback(async ({ name, email, password, remember: keep = true }) => {
+    const { token, user: profile } = await api.registerAccount({
+      name: (name || '').trim(),
+      email: (email || '').trim().toLowerCase(),
+      password
+    })
+    setToken(token, { remember: keep })
+    persist(profile, keep)
+    setRemember(keep)
+    setUser(profile)
+    return profile
+  }, [])
+
+  // Re-reads the profile from the server — call it after anything that changes
+  // the user's memberships (an approved application) so gated tabs unlock
+  // without a full reload.
+  const refresh = useCallback(async () => {
+    const profile = await api.getMe()
+    persist(profile, remember)
+    setUser(profile)
+    return profile
+  }, [remember])
+
   const logout = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY)
-    sessionStorage.removeItem(STORAGE_KEY)
+    clearToken()
+    forget()
     setUser(null)
   }, [])
 
-  return (
-    <AuthContext.Provider value={{ user, login, logout }}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({ user, login, signup, logout, refresh }),
+    [user, login, signup, logout, refresh]
   )
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {

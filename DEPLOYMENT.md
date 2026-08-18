@@ -1,17 +1,21 @@
 # Deployment
 
-How to ship PropGather. Two independent deliverables — deploying one does
-**not** require deploying the other.
+How to ship PropGather. Two deliverables, and the frontend now **depends on** the
+backend.
 
 | What | Where | How | Deployed today? |
 |---|---|---|---|
 | Frontend (`src/`) | GitHub Pages → https://lch99.github.io/Prop-Gather | `npm run deploy` | Yes (`gh-pages` branch exists) |
 | Backend (`backend/`) | Ubuntu server (systemd + nginx) + MySQL 8 + Cloudflare R2 | Part 2 | Not yet |
 
-The frontend runs entirely on `src/api.js`, an in-memory mock — **it does not
-call the backend**. So the demo site deploys and works with no server, no
-database, and no secrets. Don't let the backend section make the frontend
-deploy sound harder than `npm run deploy`.
+**Deploy the backend first.** `src/api.js` is an HTTP client for it, so a frontend
+without a reachable API shows empty pages and "we can't reach PropGather" —
+there is no mock mode any more. That also means the frontend build needs to know
+where the API lives (`VITE_API_URL`, baked in at build time) and the backend needs
+to allow the frontend's origin through CORS. See Part 6.
+
+The currently-live Pages demo predates this and still runs the old in-memory mock;
+the next `npm run deploy` replaces it with a build that requires an API.
 
 There is **no CI/CD** — no `.github/workflows/`. Every deploy is a command you
 run by hand.
@@ -69,9 +73,24 @@ git push origin master
 
 ```bash
 npm install            # only if dependencies changed
-npm run build          # sanity-check the build passes
-npm run deploy         # predeploy rebuilds, then pushes dist/ to gh-pages
+VITE_API_URL=https://api.propgather.com/api npm run build   # see below
+npm run deploy         # pushes dist/ to gh-pages
 ```
+
+**`VITE_API_URL` is required for this deploy.** Pages is static hosting with no
+API of its own, so the default same-origin `/api` would resolve to
+`lch99.github.io/api` and every request would 404. Set it to a publicly reachable
+backend origin. Because `npm run deploy` runs `predeploy` → `npm run build`
+without that variable, either export it for the whole shell or put it in
+`.env.production.local` so the rebuild picks it up:
+
+```bash
+echo 'VITE_API_URL=https://api.propgather.com/api' > .env.production.local
+```
+
+Then confirm the backend allows `https://lch99.github.io` in its CORS config, and
+that the R2 bucket does too ([backend/infra/s3-cors.json](backend/infra/s3-cors.json)) —
+otherwise the site loads but every document upload fails.
 
 `npm run deploy` publishes **whatever is in your local `dist/`** to the
 `gh-pages` branch. It does not read `master` on GitHub. So commit and push your
@@ -87,9 +106,12 @@ see CLAUDE.md):
 
 - [ ] Landing page renders, no blank white screen
 - [ ] Header logo and favicon load
+- [ ] **The community directory lists projects** — if it's empty, the API isn't
+      reachable from the browser (wrong `VITE_API_URL`, backend down, or CORS)
 - [ ] Open a project, then **reload on that URL** — must still work
-- [ ] Sign in as `resident@propgather.com` and `admin@propgather.com`
-- [ ] No 404s in the browser console
+- [ ] Sign in with a real account from the deployed database (the seeded demo
+      accounts won't exist unless that database was seeded)
+- [ ] No 404s or CORS errors in the browser console
 
 ### Two things that are deliberately the way they are
 
@@ -154,11 +176,10 @@ USD 24/month on DigitalOcean, Vultr or Linode; less on Hostinger or Contabo.
 | **Recommended** | **2 vCPU / 4 GB / 40 GB** | Comfortable defaults, no tuning needed to stay off swap. |
 | Overkill | 4 vCPU / 16 GB+ | Nothing here can use it — see below. |
 
-**This is double what the SQLite version needed**, and MySQL is the entire
-reason. SQLite ran in-process for free; `mysqld` is a second daemon that wants
-memory of its own — its default `innodb_buffer_pool_size` alone is 128 MB, and a
-realistic resident set is 400–600 MB. The Node process still idles at **54 MB
-RSS**. Budget roughly:
+**`mysqld` is what drives these numbers** — a second daemon that wants memory of
+its own. Its default `innodb_buffer_pool_size` alone is 128 MB, and a realistic
+resident set is 400–600 MB. The Node process idles at **54 MB RSS**. Budget
+roughly:
 
 ```
 4 GB VPS
@@ -168,19 +189,14 @@ RSS**. Budget roughly:
 └── OS + headroom
 ```
 
-**Storage is still a non-issue.** Measured on the SQLite build: 20,000 chat
-messages plus 2,000 forum threads with realistic bodies = **4.4 MB**. InnoDB is
-less compact than SQLite — expect roughly 2–3× that, so call it ~12 MB for the
-same content, plus the indexes in `0004`. A busy 500-unit community still
-generates only tens of MB a year. `node_modules` dropped to ~57 MB with
-better-sqlite3 gone (mysql2 is pure JS and much smaller than the native module
-it replaced). The disk is really for Ubuntu (~3 GB), MySQL's data directory,
-backups and logs: 25 GB is ample, 40 GB is comfortable.
+**Storage is a non-issue.** 20,000 chat messages plus 2,000 forum threads with
+realistic bodies come to roughly **12 MB** under InnoDB, plus the indexes in
+`0004`. A busy 500-unit community still generates only tens of MB a year.
+`node_modules` is ~57 MB. The disk is really for Ubuntu (~3 GB), MySQL's data
+directory, backups and logs: 25 GB is ample, 40 GB is comfortable.
 
-**One thing got simpler:** no native compilation. `better-sqlite3` needed
-`build-essential` and node-gyp, which was the classic first-`npm ci` OOM on a
-small VPS. `mysql2` is pure JavaScript, so that whole failure mode is gone —
-swap is now just prudence, not a prerequisite.
+**No native compilation.** `mysql2` is pure JavaScript, so there is no node-gyp
+step to run out of memory on a small VPS — swap is prudence, not a prerequisite.
 
 **CPU is the one real constraint, and more cores won't fix it.** Password
 hashing uses `bcryptjs` — pure JavaScript, and called **synchronously**
@@ -214,7 +230,7 @@ defensible choice. Set your R2 bucket's location hint to **APAC** either way.
 **Two things to buy or enable at the provider:**
 
 - **Snapshots/backups** (~20% surcharge) — worth it, but not a substitute for
-  the logical SQLite backup in 2.10. A snapshot restores a whole machine; what
+  the logical backup in 2.10. A snapshot restores a whole machine; what
   you'll usually want back is just the database.
 - **An external uptime check** on `/api/health` (UptimeRobot's free tier does
   it). Nothing in this stack notices if the process wedges — `Restart=always`
@@ -253,9 +269,8 @@ sudo -u propgather npm ci --omit=dev
 ```
 
 `--omit=dev` skips vitest/supertest — the server never runs tests. Run those
-locally before pushing. (Unlike the SQLite build, the suite now needs a MySQL
-server, so running it here means pointing `MYSQL_TEST_DATABASE` at a scratch
-database on this box.)
+locally before pushing. (The suite needs a MySQL server, so running it here
+means pointing `MYSQL_TEST_DATABASE` at a scratch database on this box.)
 
 ### 2.4 Install and secure MySQL
 
@@ -353,6 +368,10 @@ MYSQL_POOL_SIZE=10
 # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 JWT_SECRET=<32-random-bytes-hex>
 
+# Whichever origin serves the frontend. Without this the browser blocks every
+# request and the app looks empty; the boot log prints what took effect.
+CORS_ORIGINS=https://propgather.com
+
 AWS_REGION=auto
 S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 AWS_S3_BUCKET=propgather-verification-docs
@@ -368,6 +387,7 @@ AWS_SECRET_ACCESS_KEY=<r2-secret>
 | `MYSQL_DATABASE` | **Yes** | `propgather` | Created in 2.4, or auto-created if the user has CREATE. |
 | `MYSQL_POOL_SIZE` | No | `10` | Ceiling on concurrent queries. Raising it past MySQL's `max_connections` just moves the queue. |
 | `PORT` | No | `4000` | Must match the nginx `proxy_pass`. |
+| `CORS_ORIGINS` | **Yes** | `http://localhost:5173` (dev only) | Comma-separated browser origins allowed to call the API. Unset on a server means the deployed frontend is **blocked** — empty pages, CORS errors in the console. `*` allows everything. |
 | `AWS_S3_BUCKET` | **Yes** | — | R2 bucket name. |
 | `S3_ENDPOINT` | Yes (R2) | — | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`. Omit for real AWS S3. |
 | `AWS_REGION` | **Yes** | `auto` when `S3_ENDPOINT` set | `auto` for R2; a real region for AWS. |
@@ -419,8 +439,8 @@ listens, so starting before MySQL is up means the boot fails. With `Restart=alwa
 it would recover, but you'd see a confusing crash loop in the logs on every reboot.
 
 `ProtectSystem=strict` makes the whole filesystem read-only for this service.
-There's no `ReadWritePaths` any more — the app writes nothing to disk now that
-MySQL owns the data, which is a genuine hardening win over the SQLite setup.
+There's no `ReadWritePaths` — the app writes nothing to disk, since MySQL owns
+the data.
 
 `ExecStart` calls `node` directly rather than `npm start`, so there's no npm
 wrapper process between systemd and the app, and no reliance on
@@ -549,8 +569,7 @@ and fails, or worse, reaches a different database.
 ### 2.10 Backups
 
 `mysqldump` with `--single-transaction` takes a consistent snapshot without
-locking the tables, because every table here is InnoDB. (The old SQLite advice
-about WAL siblings no longer applies — there is no file to copy.)
+locking the tables, because every table here is InnoDB.
 
 Give root's credentials to the client rather than the command line, so they
 never appear in `ps`:
@@ -697,15 +716,13 @@ The full suite — **294 tests across 20 files** — passes against a real MySQL
 database, not a stand-in. (`backend/README.md` still says 163; that number is
 stale.)
 
-### ⚠️ Migrations are no longer atomic
+### ⚠️ Migrations are not atomic
 
-This is the single most important difference from the SQLite build, and it
-changes how you must write them.
+This is the single most important constraint on how you write them.
 
-SQLite wrapped each migration in a transaction, so a file that failed halfway
-rolled back completely. **MySQL implicitly commits before and after every DDL
-statement**, so `ALTER TABLE` cannot be rolled back. A file that fails on its
-third statement leaves the first two applied.
+**MySQL implicitly commits before and after every DDL statement**, so
+`ALTER TABLE` cannot be rolled back. A file that fails on its third statement
+leaves the first two applied.
 
 The runner's defence is that it records a migration only after the *whole* file
 succeeds — so the next boot retries it from the top. That only works if
@@ -736,11 +753,11 @@ service can't escape.**
   `JSON.parse()` the routes do.
 - **`rating` is `DOUBLE`, not `DECIMAL`** — mysql2 returns `DECIMAL` as a string,
   which would turn `4.6` into `"4.60"` in API responses.
-- **InnoDB auto-indexes every FK column**, which SQLite doesn't. That's why 0004
-  is much smaller here than its SQLite ancestor: seven single-column indexes in
-  the original were pure duplication of what the constraints already create.
-- **No partial indexes.** The SQLite purge index (`… WHERE document_file IS NOT
-  NULL`) has no MySQL equivalent and became a `(status, decided_at)` composite.
+- **InnoDB auto-indexes every FK column**, which is why 0004 is small — a
+  single-column index on an FK would duplicate what the constraint already
+  creates.
+- **No partial indexes.** MySQL has no `… WHERE document_file IS NOT NULL`
+  equivalent, so the purge index is a `(status, decided_at)` composite.
 - **`SET @x := …` collides with named placeholders.** mysql2's
   `namedPlaceholders` parser reads `:=` as a `:name` parameter, so the migration
   connection turns that option off explicitly. If a future migration mysteriously
@@ -872,8 +889,11 @@ Before exposing the port:
 Open items, not bugs — but they should close before the first real ownership
 document is uploaded.
 
-- **CORS is wide open.** [app.js:23](backend/src/app.js#L23) is a bare
-  `app.use(cors())` — every origin allowed. Restrict to your frontend origin(s).
+- **CORS is restricted — but you must set `CORS_ORIGINS`.** Unset, only the local
+  dev origins are allowed ([middleware/cors.js](backend/src/middleware/cors.js)),
+  which on a server means the deployed frontend is blocked and every page renders
+  empty. Set it to your frontend origin(s), comma-separated, and check the boot
+  log line (`CORS: allowing …`) to confirm what took effect.
 - **`JWT_SECRET` must be set** (2.5). The fallback is public.
 - **Rate limiting is per-process and in-memory**
   ([rateLimit.js](backend/src/middleware/rateLimit.js)). It resets on restart
@@ -887,8 +907,8 @@ document is uploaded.
   clock depends on detection — see
   [PDPA_COMPLIANCE_CHECKLIST.md](PDPA_COMPLIANCE_CHECKLIST.md).
 - **InnoDB samples statistics automatically**, so there's no `ANALYZE` step to
-  schedule the way SQLite needed. If a query plan ever looks wrong after a large
-  data change, `ANALYZE TABLE <name>;` refreshes it by hand.
+  schedule. If a query plan ever looks wrong after a large data change,
+  `ANALYZE TABLE <name>;` refreshes it by hand.
 - **MySQL's own hardening** is now part of your surface area: keep it bound to
   `127.0.0.1` (2.4), keep the app user off `root`, and let
   `unattended-upgrades` patch `mysql-server` along with everything else.
@@ -897,17 +917,31 @@ document is uploaded.
 
 ## Part 6 — Wiring the frontend to the backend
 
-Not done yet, and not needed for either deploy above. When it happens:
+**Done.** `src/api.js` calls the backend over HTTP and [src/auth.jsx](src/auth.jsx)
+stores a real JWT. Consequences that now apply to every deploy:
 
-- The frontend gains an API base URL — a `VITE_*` var baked in **at build
-  time**, so changing it means a rebuild and redeploy, not a config edit.
-- The backend's CORS must list the Pages/custom domain (Part 5).
-- R2's CORS `AllowedOrigins` must list it too, or uploads fail.
-- The demo auth in [src/auth.jsx](src/auth.jsx) — which accepts any email with
-  no password check — must be replaced with real JWT handling. Shipping that
-  file as-is against a real backend would be an open door.
-- The frontend stops being independently deployable: a broken backend becomes a
-  broken site.
+- **The frontend is no longer independently deployable.** A broken or unreachable
+  backend is a broken site — there is no mock fallback to fall back to.
+- **`VITE_API_URL` is baked in at build time**, so pointing the frontend at a
+  different API means a rebuild and redeploy, not a config edit. It defaults to
+  `/api` (same origin) in a production build, which is what you want when nginx
+  serves the frontend and proxies `/api`; set it explicitly for any split
+  deployment, including GitHub Pages:
+
+  ```bash
+  VITE_API_URL=https://api.propgather.com/api npm run build
+  ```
+
+- **The backend's `CORS_ORIGINS` must list the frontend's origin.** It defaults to
+  the local dev origins only, so a server without it blocks the deployed frontend
+  outright (Part 5).
+- **R2's CORS `AllowedOrigins` must list it too**, or document uploads fail at
+  the browser → R2 `PUT`. See [backend/infra/s3-cors.json](backend/infra/s3-cors.json).
+- **`VITE_SHOW_DEMO_LOGINS` must stay unset/false** for a real deployment. It
+  prints the seeded demo credentials on the login page; it's off by default in
+  production builds.
+- **`JWT_SECRET` matters more than ever** (2.5) — it's now the only thing standing
+  between a request and an admin session.
 
 ---
 
@@ -918,6 +952,10 @@ Not done yet, and not needed for either deploy above. When it happens:
 | `ERR_MODULE_NOT_FOUND` on boot, clean local tests | untracked file never committed | Part 0 — `git add -A` |
 | Pages site blank / 404s on JS and CSS | `base` mismatch | Check `base` vs. the URL; inspect `dist/index.html` |
 | Deployed site doesn't match the repo | `deploy` published a stale local `dist/` | Push `master`, rebuild, redeploy |
+| Every page empty, "can't reach PropGather" | backend down, or `VITE_API_URL` wrong/stale in the build | `curl https://<api>/api/health`; rebuild with the right `VITE_API_URL` |
+| Login works, then everything 401s | `JWT_SECRET` changed between requests, or unset across restarts | Set it explicitly and keep it stable (2.5) |
+| Pages/browser console shows CORS errors on `/api` | `CORS_ORIGINS` doesn't list the frontend origin | Set it, restart, check the `CORS: allowing …` boot log |
+| Document upload fails at the `PUT`, app itself fine | R2 bucket CORS missing the frontend origin | `backend/infra/s3-cors.json` |
 | `ER_ACCESS_DENIED_ERROR` on boot | wrong `MYSQL_USER`/`MYSQL_PASSWORD`, or the user isn't `@localhost` | Re-check the GRANT in 2.4 |
 | `ER_BAD_DB_ERROR` on boot | database missing and the app user lacks CREATE | Create it by hand (2.4) |
 | Crash loop on every reboot | app started before MySQL was ready | `Requires=mysql.service` + `After=` in the unit (2.7) |

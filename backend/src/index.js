@@ -1,4 +1,5 @@
 import { createApp } from './app.js'
+import { allowedOrigins } from './middleware/cors.js'
 import { runMigrations } from './db/migrate.js'
 import { seed } from './db/seed.js'
 import { purgeApplications } from './jobs/purgeApplications.js'
@@ -25,6 +26,11 @@ const app = createApp()
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`PropGather backend listening on http://localhost:${PORT}`)
+  // Logged because a CORS allowlist that doesn't include the deployed frontend
+  // presents as "every page is empty" in the browser with nothing in this log to
+  // explain it. Printing the effective list makes that a five-second diagnosis.
+  // eslint-disable-next-line no-console
+  console.log(`CORS: allowing ${allowedOrigins().join(', ')}${process.env.CORS_ORIGINS ? '' : ' (CORS_ORIGINS unset — dev defaults)'}`)
 })
 
 // Document retention: purge decided applications' documents past the 14-day

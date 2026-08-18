@@ -70,7 +70,7 @@ function AddCommunityModal({ existingTypes, onClose, onCreated }) {
         units: form.units,
         floorsPerBlock: form.floorsPerBlock,
         blocks: form.blocks.split(',').map(b => b.trim()).filter(Boolean)
-      }, user?.role, user)
+      }, user?.role)
       onCreated(project)
     } catch (err) {
       setError(err.message || "We couldn't add that community just now. Please try again.")
@@ -235,10 +235,15 @@ export default function AdminOverviewPage() {
       setProjects(list)
       // One references fetch per community — same api.getReferences() the References
       // admin page uses, just gathered across every project instead of one at a time.
-      const entries = await Promise.all(list.map(p => api.getReferences(p.id).then(refs => [p.id, refs])))
+      // Each one is caught on its own: these are real requests now, and letting a
+      // single failure reject the batch would blank the reference counts for
+      // every community rather than just the one that failed.
+      const entries = await Promise.all(
+        list.map(p => api.getReferences(p.id).then(refs => [p.id, refs]).catch(() => [p.id, []]))
+      )
       if (alive) setRefsByProject(Object.fromEntries(entries))
-    })
-    api.getVerificationQueue(user?.role).then(q => { if (alive) setQueue(q) })
+    }).catch(() => { if (alive) setProjects([]) })
+    api.getVerificationQueue(user?.role).then(q => { if (alive) setQueue(q) }).catch(() => {})
     return () => { alive = false }
   }, [user?.role])
 

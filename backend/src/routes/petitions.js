@@ -18,8 +18,8 @@ const createSchema = z.object({
 })
 
 // Signature count and author name are joined in, and the caller's own signature
-// resolved in the same pass — three queries per petition became one. See the
-// same note in chat.js for why that matters more on MySQL than it did on SQLite.
+// resolved in the same pass — three queries per petition become one. See the
+// same note in chat.js for why round trips matter here.
 const PETITION_SELECT = `
   SELECT p.*,
          u.name AS creator_name,
@@ -111,9 +111,9 @@ petitionsRouter.post('/:petitionId/sign', requireAuth, requireMembership, wrap(a
   const row = await db.get('SELECT * FROM petitions WHERE id = ? AND project_id = ?', [req.params.petitionId, req.params.projectId])
   if (!row) return next(notFound("We couldn't find that petition — it may have been removed."))
 
-  // INSERT IGNORE (SQLite's INSERT OR IGNORE) against the (petition_id, user_id)
-  // primary key is what makes signing idempotent — signing twice is a no-op
-  // rather than a duplicate signature or an error.
+  // INSERT IGNORE against the (petition_id, user_id) primary key is what makes
+  // signing idempotent — signing twice is a no-op rather than a duplicate
+  // signature or an error.
   await db.run('INSERT IGNORE INTO petition_signatures (petition_id, user_id) VALUES (?, ?)', [row.id, req.user.id])
   res.json(serialize(await fetchPetition(db, row.id, req.user.id)))
 }))

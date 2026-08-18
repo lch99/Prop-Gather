@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
+import { useAuth } from '../auth'
 import { C, card, button, badge } from '../theme'
 import { useAttachments, AttachmentPicker, AttachmentList } from '../components/Attachments'
 
@@ -11,21 +12,29 @@ const docByTier = {
   'House Owner': 'Sale & Purchase Agreement'
 }
 
+const MIN_PASSWORD = 8
+
 export default function RegisterPage() {
   const [searchParams] = useSearchParams()
+  // Someone already signed in is adding a second community, so step 1 skips
+  // account creation entirely — their name and email come from the account, and
+  // the server uses those for the application regardless of what a form says.
+  const { user, signup, refresh } = useAuth()
   const [projects, setProjects] = useState([])
   const [step, setStep] = useState(0)
   const [form, setForm] = useState({
-    name: '', email: '', phone: '', unit: '', projectId: searchParams.get('projectId') || '', tier: 'Owner'
+    name: '', email: '', password: '', phone: '', unit: '',
+    projectId: searchParams.get('projectId') || '', tier: 'Owner'
   })
   const [application, setApplication] = useState(null)
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
   const [tncAccepted, setTncAccepted] = useState(false)
   const [tncChecked, setTncChecked] = useState(false)
   const [docConsentChecked, setDocConsentChecked] = useState(false)
   const { attachments, addFiles, removeAttachment, error: uploadError, reset: resetAttachments } = useAttachments(1)
 
-  useEffect(() => { api.getProjects().then(setProjects) }, [])
+  useEffect(() => { api.getProjects().then(setProjects).catch(() => setProjects([])) }, [])
 
   const update = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }))
 
@@ -33,8 +42,9 @@ export default function RegisterPage() {
     // Names the fields that are actually missing — "fill in all fields" sent
     // people hunting through the form, and phone isn't required here anyway.
     const missing = [
-      [!form.name, 'your full name'],
-      [!form.email, 'your email'],
+      [!user && !form.name, 'your full name'],
+      [!user && !form.email, 'your email'],
+      [!user && !form.password, 'a password'],
       [!form.projectId, 'your property project'],
       [!form.unit, 'your unit / lot number']
     ].filter(([isMissing]) => isMissing).map(([, label]) => label)
@@ -46,7 +56,29 @@ export default function RegisterPage() {
       setError(`Please add ${list} to continue.`)
       return
     }
+    if (!user && form.password.length < MIN_PASSWORD) {
+      setError(`Please choose a password of at least ${MIN_PASSWORD} characters.`)
+      return
+    }
     setError('')
+
+    // The account has to exist before the next step: uploading a document needs
+    // an authenticated request, and the application is attributed to this user.
+    if (!user) {
+      setBusy(true)
+      try {
+        await signup({ name: form.name, email: form.email, password: form.password })
+      } catch (e) {
+        setError(
+          e.status === 409
+            ? 'An account with this email already exists. Please sign in first, then come back to add this community.'
+            : e.message || "We couldn't create your account just now. Please try again."
+        )
+        return
+      } finally {
+        setBusy(false)
+      }
+    }
     setStep(1)
   }
 
@@ -68,34 +100,76 @@ export default function RegisterPage() {
       setError('Please tick the consent box so we can review your document.')
       return
     }
+    setBusy(true)
     try {
-      const app = await api.register({
-        ...form,
+      // Uploads the file straight to secure storage, then submits the reference —
+      // see api.submitApplication. Ticking the box above is what allows it.
+      const app = await api.submitApplication({
+        projectId: form.projectId,
+        unit: form.unit,
+        tier: form.tier,
+        phone: form.phone,
         document: attachments[0].name,
-        documentFile: attachments[0],
-        consentTimestamp: new Date()
+        documentFile: attachments[0]
       })
       setApplication(app)
       setStep(2)
     } catch (e) {
       setError(e.message || "We couldn't submit your application just now. Please try again.")
+    } finally {
+      setBusy(false)
     }
   }
 
-  const withdrawApplication = () => {
-    setApplication(null)
-    setDocConsentChecked(false)
-    resetAttachments()
-    setStep(1)
+  // Withdrawal is a real deletion server-side: the application row goes, and the
+  // uploaded document is removed from storage rather than waiting for the 14-day
+  // retention purge.
+  const withdrawApplication = async () => {
+    if (!application) return
+    if (!window.confirm('Withdraw your application and delete the document you uploaded?')) return
+    setBusy(true)
+    setError('')
+    try {
+      await api.withdrawApplication(application.id)
+      setApplication(null)
+      setDocConsentChecked(false)
+      resetAttachments()
+      setStep(1)
+    } catch (e) {
+      setError(e.message || "We couldn't withdraw your application just now. Please try again.")
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const simulateApproval = async () => {
+  // Only an admin can decide an application, so this checks for their decision
+  // rather than standing in for it. refresh() re-reads the profile so the newly
+  // granted membership unlocks the community's tabs without a reload.
+  const checkStatus = async () => {
     if (!application) return
-    // Demo shortcut for the "Simulate admin approval" button — stands in for a
-    // real admin's decision in the Admin Queue tab, so it's attributed to the
-    // same fixed demo admin account (see DEMO_ACCOUNTS in auth.jsx).
-    await api.decideVerification(application.id, 'approve', { id: 'admin', name: 'Platform Admin' })
-    setStep(3)
+    setBusy(true)
+    setError('')
+    try {
+      const mine = await api.myApplications()
+      const latest = mine.find(a => a.id === application.id)
+      if (!latest) {
+        setError('This application is no longer on file. Please submit your document again.')
+        setApplication(null)
+        setStep(1)
+        return
+      }
+      setApplication(latest)
+      if (latest.status === 'Approved') {
+        await refresh()
+        setStep(3)
+      } else if (latest.status === 'Pending') {
+        setError('Your application is still waiting for review. Please check back shortly.')
+      }
+    } catch (e) {
+      setError(e.message || "We couldn't check your application just now. Please try again.")
+    } finally {
+      setBusy(false)
+    }
   }
 
   if (!tncAccepted) {
@@ -171,16 +245,46 @@ export default function RegisterPage() {
       <div style={{ ...card, padding: 28 }}>
         {step === 0 && (
           <div style={{ display: 'grid', gap: 16 }}>
-            <h3 style={{ margin: 0, color: C.navy, fontSize: 19 }}>Step 1 — Create your account</h3>
+            <h3 style={{ margin: 0, color: C.navy, fontSize: 19 }}>
+              {user ? 'Step 1 — Which community?' : 'Step 1 — Create your account'}
+            </h3>
+
+            {user ? (
+              <div style={{ ...card, padding: 14, background: C.blueLight, border: 'none', fontSize: 13.5, color: C.text }}>
+                Signed in as <strong>{user.name}</strong> ({user.email}). Your application will be filed under
+                this account — <Link to="/login" style={{ color: C.blue, fontWeight: 700 }}>use a different one</Link> if
+                that isn't you.
+              </div>
+            ) : (
+              <p style={{ margin: 0, fontSize: 13.5, color: C.textMuted, lineHeight: 1.6 }}>
+                Already have an account? <Link to="/login" style={{ color: C.blue, fontWeight: 700 }}>Sign in</Link> first
+                and you can skip straight to uploading your proof.
+              </p>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '18px 28px' }}>
-              <Field label="Full name">
-                <input value={form.name} onChange={update('name')} style={inputStyle} placeholder="e.g. Alex Lim" />
-              </Field>
-              <Field label="Email">
-                <input type="email" value={form.email} onChange={update('email')} style={inputStyle} placeholder="you@example.com" />
-              </Field>
+              {!user && (
+                <>
+                  <Field label="Full name">
+                    <input value={form.name} onChange={update('name')} style={inputStyle} placeholder="e.g. Alex Lim" autoComplete="name" />
+                  </Field>
+                  <Field label="Email">
+                    <input type="email" value={form.email} onChange={update('email')} style={inputStyle} placeholder="you@example.com" autoComplete="email" />
+                  </Field>
+                  <Field label="Password">
+                    <input
+                      type="password"
+                      value={form.password}
+                      onChange={update('password')}
+                      style={inputStyle}
+                      placeholder={`At least ${MIN_PASSWORD} characters`}
+                      autoComplete="new-password"
+                    />
+                  </Field>
+                </>
+              )}
               <Field label="Phone">
-                <input value={form.phone} onChange={update('phone')} style={inputStyle} placeholder="+60 12-345 6789" />
+                <input value={form.phone} onChange={update('phone')} style={inputStyle} placeholder="+60 12-345 6789" autoComplete="tel" />
               </Field>
               <Field label="Unit / lot number">
                 <input value={form.unit} onChange={update('unit')} style={inputStyle} placeholder="e.g. B-21-03" />
@@ -199,7 +303,13 @@ export default function RegisterPage() {
               </Field>
             </div>
             {error && <div role="alert" style={{ color: C.danger, fontSize: 13 }}>{error}</div>}
-            <button style={button('primary')} onClick={submitRegistration}>Continue</button>
+            <button
+              style={{ ...button('primary'), opacity: busy ? 0.7 : 1, cursor: busy ? 'wait' : 'pointer' }}
+              disabled={busy}
+              onClick={submitRegistration}
+            >
+              {busy ? 'Creating your account…' : 'Continue'}
+            </button>
           </div>
         )}
 
@@ -246,8 +356,12 @@ export default function RegisterPage() {
             {error && <div role="alert" style={{ color: C.danger, fontSize: 13 }}>{error}</div>}
             {/* Clickable even when incomplete — submitDocument names what's
                 missing. See the note on the Terms & Conditions button above. */}
-            <button style={button('primary')} onClick={submitDocument}>
-              Submit for review
+            <button
+              style={{ ...button('primary'), opacity: busy ? 0.7 : 1, cursor: busy ? 'wait' : 'pointer' }}
+              disabled={busy}
+              onClick={submitDocument}
+            >
+              {busy ? 'Uploading your document…' : 'Submit for review'}
             </button>
           </div>
         )}
@@ -267,7 +381,7 @@ export default function RegisterPage() {
               {application?.documentFile && (
                 <AttachmentList attachments={[application.documentFile]} thumb={72} style={{ marginTop: 8 }} />
               )}
-              <div style={{ marginTop: 6 }}>{badgeFor('Pending')}</div>
+              <div style={{ marginTop: 6 }}>{badgeFor(application?.status || 'Pending')}</div>
             </div>
 
             <div style={{
@@ -282,13 +396,33 @@ export default function RegisterPage() {
               )}
             </div>
 
-            <p style={{ color: C.textMuted, fontSize: 13, margin: 0 }}>
-              In a real deployment, a Platform Admin reviews this in the admin queue. For this demo, you can
-              simulate that review — check the <strong>Admin Queue</strong> tab to approve it, or click below.
-            </p>
-            <button style={button('success')} onClick={simulateApproval}>Simulate admin approval</button>
+            {application?.status === 'Rejected' ? (
+              <p style={{ color: C.textMuted, fontSize: 13, margin: 0 }}>
+                A platform admin couldn't verify this document. You can withdraw this application and submit a
+                clearer copy, or <Link to="/contact" style={{ color: C.blue, fontWeight: 700 }}>contact us</Link> if
+                you think it was reviewed in error.
+              </p>
+            ) : (
+              <p style={{ color: C.textMuted, fontSize: 13, margin: 0 }}>
+                A platform admin reviews your document in the admin queue — you'll get access as soon as they
+                approve it. Check back here any time.
+              </p>
+            )}
+
+            {error && <div role="alert" style={{ color: C.danger, fontSize: 13 }}>{error}</div>}
+
+            {application?.status !== 'Rejected' && (
+              <button
+                style={{ ...button('primary'), opacity: busy ? 0.7 : 1, cursor: busy ? 'wait' : 'pointer' }}
+                disabled={busy}
+                onClick={checkStatus}
+              >
+                {busy ? 'Checking…' : 'Check my application status'}
+              </button>
+            )}
             <button
-              style={{ ...button('outline'), fontSize: 13 }}
+              style={{ ...button('outline'), fontSize: 13, opacity: busy ? 0.7 : 1, cursor: busy ? 'wait' : 'pointer' }}
+              disabled={busy}
               onClick={withdrawApplication}
             >
               Withdraw my application &amp; delete document
@@ -304,9 +438,11 @@ export default function RegisterPage() {
               You now have full community access for <strong>{projects.find(p => p.id === application?.projectId)?.name}</strong>.
               Your profile will show as <strong>{application?.unit?.split('-').slice(0, 2).join('-') || application?.unit}</strong> with a verified badge on all posts.
             </p>
-            <a href={`/project/${application?.projectId}`}>
+            {/* Link, not a bare <a href> — a full page load would drop the
+                router's base path on the Pages build and 404. */}
+            <Link to={`/project/${application?.projectId}`}>
               <button style={button('primary')}>Go to community →</button>
-            </a>
+            </Link>
           </div>
         )}
       </div>

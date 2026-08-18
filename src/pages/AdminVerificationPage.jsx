@@ -12,15 +12,22 @@ function statusBadge(status) {
   return <span style={badge(C.danger, C.dangerBg)}>✕ Rejected</span>
 }
 
-export default function AdminVerificationPage({ queue, projects, reload, actor }) {
+export default function AdminVerificationPage({ queue, projects, reload }) {
   const [filter, setFilter] = useState('Pending')
   const [search, setSearch] = useState('')
   const [decidingId, setDecidingId] = useState(null)
+  const [error, setError] = useState('')
 
   const decide = async (id, decision) => {
     setDecidingId(id)
+    setError('')
     try {
-      await api.decideVerification(id, decision, actor)
+      await api.decideVerification(id, decision)
+      await reload()
+    } catch (err) {
+      // A 409 here means another admin decided it first — worth saying so
+      // rather than leaving the buttons looking like they did nothing.
+      setError(err.message || "We couldn't record that decision. Please try again.")
       reload()
     } finally {
       setDecidingId(null)
@@ -53,6 +60,15 @@ export default function AdminVerificationPage({ queue, projects, reload, actor }
         Platform admins review uploaded ownership/tenancy documents and approve or reject applications
         (target: within 24 hours).
       </p>
+
+      {error && (
+        <div role="alert" style={{
+          background: C.dangerBg, border: `1px solid ${C.danger}`, borderRadius: C.radiusSm,
+          padding: '10px 14px', color: C.danger, fontSize: 13.5, fontWeight: 600, marginBottom: 14
+        }}>
+          {error}
+        </div>
+      )}
 
       {queue === null ? (
         <div style={{ display: 'grid', gap: 12 }}>

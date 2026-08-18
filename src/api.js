@@ -1,481 +1,253 @@
-// Frontend-only demo API — no backend required.
-// All data lives in demoData.js and is deep-cloned at startup.
-// Mutations (upvotes, votes, posts) work in-memory and reset on page refresh.
+// The API client — every call here hits the Express + MySQL backend in
+// `backend/`. Data persists and access control is enforced by the server.
+//
+// Two consequences worth knowing when reading call sites:
+//
+//   - Most reads need a verified community membership for the project (granted
+//     by an admin approving an application). An unverified resident gets a 403,
+//     which is what ProjectPage's LockedGate is for.
+//   - Anything that used to be attributed client-side ("Alex Lim", the acting
+//     admin) is now attributed from the bearer token, server-side. Callers no
+//     longer pass an actor.
+//
+// Errors arrive as ApiError with a resident-safe `.message`, plus `.status` and
+// the backend's field-level `.details` — see apiClient.js.
 
-import * as seed from './demoData.js'
-import { detectSensitiveContent, sensitiveContentMessage } from './sensitiveContent.js'
+import { request, uploadToStorage } from './apiClient'
 
-const clone = (x) => JSON.parse(JSON.stringify(x))
+export { ApiError } from './apiClient'
 
-// Mirrors the backend's blockSensitiveContent middleware, which returns a 400
-// for the same inputs (see backend/src/middleware/sensitiveContent.js). Throwing
-// here keeps the demo honest: a post the real server would reject is rejected in
-// the prototype too, so the UI never learns to depend on it succeeding.
-function assertNoSensitiveContent(...values) {
-  const kinds = detectSensitiveContent(values)
-  if (kinds.length) throw new Error(sensitiveContentMessage(kinds))
+// useAttachments (components/Attachments.jsx) hands us `{ name, type, size,
+// dataUrl }` rather than the original File, because the demo needed something
+// serialisable. Turning the data URL back into bytes here keeps that shared
+// picker unchanged for the one flow that uploads to storage instead of posting
+// the payload inline.
+async function dataUrlToBlob(dataUrl) {
+  const res = await fetch(dataUrl)
+  return res.blob()
 }
-
-// Mutable in-memory store — deep clone seed data so mutations don't affect the originals
-const store = {
-  projects:      clone(seed.projects),
-  forumThreads:  clone(seed.forumThreads),
-  chatChannels:  clone(seed.chatChannels),
-  chatMessages:  clone(seed.chatMessages),
-  vendors:       clone(seed.vendors),
-  petitions:     clone(seed.petitions),
-  polls:         clone(seed.polls),
-  defects:       clone(seed.defects),
-  documents:     clone(seed.documents),
-  references:    clone(seed.references),
-  feeTracker:    clone(seed.feeTracker),
-  verificationQueue: [],
-  // Communities granted via an approved application, keyed by projectId — merged
-  // into getMe() so "Simulate admin approval" actually unlocks that project.
-  approvedMemberships: [],
-  // Mirrors the backend's audit_log table at demo scale — who did what to which
-  // application, and when. See src/pages/AdminActivityLogPage.jsx.
-  auditLog: [],
-}
-
-function logAudit({ actorName, actorRole, action, targetType = 'application', targetId, projectId, metadata = {} }) {
-  store.auditLog.unshift({
-    id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    actorName,
-    actorRole,
-    action,
-    targetType,
-    targetId,
-    projectId,
-    metadata,
-    createdAt: new Date().toISOString()
-  })
-}
-
-// Helper to add a small async delay so UI loading states are visible
-const delay = (ms = 120) => new Promise(r => setTimeout(r, ms))
-
-// Mirrors CHANNELS in backend/src/routes/chat.js — the same set every project gets.
-const DEFAULT_CHAT_CHANNELS = ['general', 'defects', 'announcements', 'facilities', 'renovation']
-
-// Vendor filtering: match by project state or city appearing in vendor districts
-function vendorsForProject(projectId) {
-  const project = store.projects.find(p => p.id === projectId)
-  if (!project) return store.vendors
-  return store.vendors.filter(v =>
-    v.state === project.state || v.districts.includes(project.city)
-  )
-}
-
-let _msgCounter = 1000
 
 export const api = {
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  // These three return the raw { token, user } / user payloads; auth.jsx owns
+  // what happens to the token. Don't call them directly from a component —
+  // useAuth() keeps React state and storage in step.
+  login: (email, password) =>
+    request('/auth/login', { method: 'POST', body: { email, password } }),
+
+  registerAccount: ({ name, email, password }) =>
+    request('/auth/register', { method: 'POST', body: { name, email, password } }),
+
+  getMe: () => request('/auth/me'),
+
   // ── Projects ──────────────────────────────────────────────────────────────
-  getProjects: async (params = {}) => {
-    await delay()
-    let results = store.projects
-    if (params.state) results = results.filter(p => p.state === params.state)
-    if (params.type)  results = results.filter(p => p.type  === params.type)
-    if (params.search) {
-      const q = params.search.toLowerCase()
-      results = results.filter(p =>
-        p.name.toLowerCase().includes(q) ||
-        p.city.toLowerCase().includes(q) ||
-        p.state.toLowerCase().includes(q)
-      )
-    }
-    return clone(results)
-  },
+  // Public: the directory is browsable before signing in.
+  getProjects: (params = {}) =>
+    request('/projects', { query: { state: params.state, type: params.type, search: params.search } }),
 
-  getProject: async (id) => {
-    await delay()
-    const p = store.projects.find(p => p.id === id)
-    if (!p) throw new Error('Project not found')
-    return clone(p)
-  },
+  getProject: (id) => request(`/projects/${id}`),
 
-  // Admin-only, mirrors POST /api/projects — admins add communities directly,
-  // without going through the resident-facing "request a community" flow.
-  // `role` is the acting user's role (from useAuth()), same convention as
-  // getVerificationQueue/getAuditLog since this mock has no server boundary.
-  createProject: async (data, role, actor) => {
-    await delay()
-    if (role !== 'admin') throw new Error('Only platform admins can add a community.')
-
-    const name = (data.name || '').trim()
-    const city = (data.city || '').trim()
-    const state = (data.state || '').trim()
-    const type = (data.type || '').trim()
-    const address = (data.address || '').trim()
-    if (!name || !city || !state || !type || !address) {
-      throw new Error('Please fill in the community name, property type, address, city and state.')
-    }
-    // Same guard as the backend's 409: two rows for one building would split its
-    // residents across two private spaces, each invisible to the other.
-    const clash = store.projects.find(p =>
-      p.name.toLowerCase() === name.toLowerCase() && p.city.toLowerCase() === city.toLowerCase()
-    )
-    if (clash) throw new Error(`${clash.name} is already on PropGather in ${clash.city}. Open the existing community instead of adding a second one.`)
-
-    const project = {
-      id: `p-${Date.now().toString(36)}`,
-      name, type, state, city, address,
-      ownerCount: Number(data.ownerCount) || 0,
-      activityLevel: data.activityLevel || 'Low',
-      units: Number(data.units) || 0,
-      blocks: (data.blocks || []).map(b => b.trim()).filter(Boolean),
-      floorsPerBlock: Number(data.floorsPerBlock) || 0,
-      latestThread: null
-    }
-    store.projects.push(project)
-    // The backend serves the same fixed channel list for every project (see
-    // CHANNELS in backend/src/routes/chat.js), so a community added here gets
-    // them too — otherwise its Chat tab would open with no channels at all.
-    store.chatChannels[project.id] = [...DEFAULT_CHAT_CHANNELS]
-    logAudit({
-      actorName: actor?.name || 'Unknown admin',
-      actorRole: 'admin',
-      action: 'project.created',
-      targetType: 'project',
-      targetId: project.id,
-      projectId: project.id,
-      metadata: { name, type, city, state }
+  // Admin-only. The `role` guard is a UX short-circuit so a non-admin gets the
+  // same message without a round trip — the server's requireRole('admin') is
+  // the actual boundary.
+  createProject: async (data, role) => {
+    if (role && role !== 'admin') throw new Error('Only platform admins can add a community.')
+    return request('/projects', {
+      method: 'POST',
+      body: {
+        name: data.name,
+        type: data.type,
+        state: data.state,
+        city: data.city,
+        address: data.address,
+        ownerCount: data.ownerCount,
+        activityLevel: data.activityLevel,
+        units: data.units,
+        blocks: data.blocks,
+        floorsPerBlock: data.floorsPerBlock
+      }
     })
-    return clone(project)
-  },
-
-  getMe: async () => {
-    await delay(60)
-    const extra = store.approvedMemberships
-      .filter(m => !seed.demoUser.communities.some(c => c.projectId === m.projectId))
-      .map(m => {
-        const project = store.projects.find(p => p.id === m.projectId)
-        return {
-          projectId: m.projectId,
-          tier: m.tier,
-          unit: m.unit,
-          verifiedAt: m.verifiedAt,
-          project: project ? { name: project.name, city: project.city, state: project.state } : null
-        }
-      })
-    return clone({ ...seed.demoUser, communities: [...seed.demoUser.communities, ...extra] })
   },
 
   // ── Registration / verification ───────────────────────────────────────────
-  // consentTimestamp (Date) comes from the checkbox in RegisterPage — persisting
-  // it here (rather than only in component state) mirrors the backend's
-  // consent_accepted_at column.
-  register: async (data) => {
-    await delay()
-    const { consentTimestamp, ...rest } = data
-    const app = {
-      ...rest,
-      id: `app-${Date.now()}`,
-      status: 'Pending',
-      submittedAt: new Date().toISOString(),
-      consentAcceptedAt: consentTimestamp ? new Date(consentTimestamp).toISOString() : new Date().toISOString()
-    }
-    store.verificationQueue.push(app)
-    logAudit({
-      actorName: app.name,
-      actorRole: 'resident',
-      action: 'application.submitted',
-      targetId: app.id,
-      projectId: app.projectId,
-      metadata: { tier: app.tier, unit: app.unit }
+  // Submits an ownership-proof application in the three steps the backend
+  // expects: ask for a presigned upload URL, send the file bytes directly to S3
+  // (they never pass through the API server), then submit the returned key.
+  //
+  // `consent: true` is required by the server and is what stamps
+  // consent_accepted_at — the caller must only reach here from a ticked box.
+  submitApplication: async ({ projectId, unit, tier, phone, document, documentFile }) => {
+    const { key, uploadUrl } = await request('/applications/upload-url', {
+      method: 'POST',
+      body: { fileName: documentFile.name, fileType: documentFile.type, fileSize: documentFile.size }
     })
-    return clone(app)
-  },
 
-  // role is the acting user's role (from useAuth()) — mirrors the backend's
-  // requireRole('admin') gate, since this mock has no server boundary of its own.
-  getVerificationQueue: async (role) => {
-    await delay()
-    if (role !== 'admin') return []
-    return clone(store.verificationQueue)
-  },
+    const blob = await dataUrlToBlob(documentFile.dataUrl)
+    await uploadToStorage(uploadUrl, blob, documentFile.type)
 
-  // actor is the deciding admin ({id, name}) from useAuth() — recorded on the
-  // application and in the audit log, mirroring the backend's decided_by column.
-  decideVerification: async (id, decision, actor) => {
-    await delay()
-    const app = store.verificationQueue.find(a => a.id === id)
-    if (app) {
-      app.status = decision === 'approve' ? 'Approved' : 'Rejected'
-      app.decidedAt = new Date().toISOString()
-      app.decidedBy = actor?.id || null
-      app.decidedByName = actor?.name || null
-      if (app.status === 'Approved') {
-        const verifiedAt = new Date().toISOString().slice(0, 10)
-        const existing = store.approvedMemberships.find(m => m.projectId === app.projectId)
-        if (existing) {
-          Object.assign(existing, { tier: app.tier, unit: app.unit, verifiedAt })
-        } else {
-          store.approvedMemberships.push({ projectId: app.projectId, tier: app.tier, unit: app.unit, verifiedAt })
-        }
+    return request('/applications', {
+      method: 'POST',
+      body: {
+        projectId,
+        unit,
+        tier,
+        document,
+        documentFile: { name: documentFile.name, type: documentFile.type, size: documentFile.size, key },
+        ...(phone ? { phone } : {}),
+        consent: true
       }
-      logAudit({
-        actorName: actor?.name || 'Unknown admin',
-        actorRole: 'admin',
-        action: app.status === 'Approved' ? 'application.approved' : 'application.rejected',
-        targetId: app.id,
-        projectId: app.projectId,
-        metadata: { tier: app.tier, unit: app.unit }
-      })
-    }
-    return clone(app)
+    })
   },
 
-  // Admin-only, mirrors GET /api/audit-log — newest first.
+  // The caller's own applications, newest first — each with a short-lived
+  // presigned download URL on documentFile.dataUrl, so AttachmentList renders it
+  // exactly as it rendered the demo's inline data URLs.
+  myApplications: () => request('/applications/mine'),
+
+  // Pending only while pending; an admin can also erase a decided one (PDPA
+  // erasure). Deletes the stored document as well.
+  withdrawApplication: (id) => request(`/applications/${id}`, { method: 'DELETE' }),
+
+  // Admin-only. See createProject for why `role` is checked client-side too.
+  getVerificationQueue: async (role) => {
+    if (role && role !== 'admin') return []
+    return request('/applications')
+  },
+
+  // The deciding admin is taken from the bearer token server-side, which is what
+  // populates decidedBy / decidedByName and the audit entry.
+  decideVerification: (id, decision) =>
+    request(`/applications/${id}/decision`, { method: 'POST', body: { decision } }),
+
+  // Admin-only, newest first, capped at 200 by the server.
   getAuditLog: async (role) => {
-    await delay()
-    if (role !== 'admin') return []
-    return clone(store.auditLog)
+    if (role && role !== 'admin') return []
+    return request('/audit-log')
   },
 
   // ── Forum ─────────────────────────────────────────────────────────────────
-  getForum: async (projectId) => {
-    await delay()
-    const threads = store.forumThreads[projectId] || []
-    return clone([...threads].sort((a, b) => {
-      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
-      return new Date(b.createdAt) - new Date(a.createdAt)
-    }))
-  },
+  getForum: (projectId) => request(`/projects/${projectId}/forum`),
 
-  createThread: async (projectId, data) => {
-    assertNoSensitiveContent(data.title, data.body)
-    await delay()
-    const thread = {
-      ...data,
-      id: `f${projectId.slice(1)}-${Date.now()}`,
-      upvotes: 0,
-      replies: 0,
-      editedAt: null,
-      pinned: false,
-      createdAt: new Date().toISOString(),
-      author: { name: 'Alex Lim', unit: 'B-21-03', tier: 'Owner', verified: true }
-    }
-    if (!store.forumThreads[projectId]) store.forumThreads[projectId] = []
-    store.forumThreads[projectId].unshift(thread)
-    return clone(thread)
-  },
+  createThread: (projectId, data) =>
+    request(`/projects/${projectId}/forum`, {
+      method: 'POST',
+      body: {
+        category: data.category,
+        title: data.title,
+        body: data.body,
+        attachments: data.attachments || [],
+        poll: data.poll || null
+      }
+    }),
 
-  // One edit per post, author only — mirrors PATCH /api/projects/:id/forum/:threadId.
-  // `editedAt` is both the "allowance spent" flag and what the UI shows as
-  // "(edited)", so a changed post is never silently different from what people
-  // replied to.
-  editThread: async (projectId, threadId, { title, body }) => {
-    assertNoSensitiveContent(title, body)
-    const thread = (store.forumThreads[projectId] || []).find(t => t.id === threadId)
-    if (!thread) throw new Error('Thread not found')
-    if (thread.editedAt) throw new Error('This post has already been edited. Posts can only be edited once.')
-    await delay()
-    thread.title = title
-    thread.body = body
-    thread.editedAt = new Date().toISOString()
-    return clone(thread)
-  },
+  // One edit per post, author only — the server owns both rules and answers 409
+  // / 403 with a message meant for the resident, so callers show `err.message`.
+  editThread: (projectId, threadId, { title, body }) =>
+    request(`/projects/${projectId}/forum/${threadId}`, { method: 'PATCH', body: { title, body } }),
 
-  upvoteThread: async (projectId, threadId) => {
-    await delay(60)
-    const thread = (store.forumThreads[projectId] || []).find(t => t.id === threadId)
-    if (thread) thread.upvotes += 1
-    return clone(thread)
-  },
+  // Idempotent server-side: upvoting twice is a no-op, not a second vote.
+  upvoteThread: (projectId, threadId) =>
+    request(`/projects/${projectId}/forum/${threadId}/upvote`, { method: 'POST' }),
 
-  voteThreadPoll: async (projectId, threadId, optionId) => {
-    await delay(60)
-    const thread = (store.forumThreads[projectId] || []).find(t => t.id === threadId)
-    if (thread?.poll && !thread.poll.votedByMe) {
-      const opt = thread.poll.options.find(o => o.id === optionId)
-      if (opt) opt.votes += 1
-      thread.poll.votedByMe = optionId
-    }
-    return clone(thread)
-  },
+  voteThreadPoll: (projectId, threadId, optionId) =>
+    request(`/projects/${projectId}/forum/${threadId}/poll-vote`, { method: 'POST', body: { optionId } }),
 
-  // Lets a resident remove their own post — mirrors the backend's
-  // DELETE /api/projects/:projectId/forum/:threadId (PDPA right to have
-  // personal data / contributed content removed, not just verification docs).
-  deleteThread: async (projectId, threadId) => {
-    await delay(60)
-    if (store.forumThreads[projectId]) {
-      store.forumThreads[projectId] = store.forumThreads[projectId].filter(t => t.id !== threadId)
-    }
-    return { ok: true }
-  },
+  deleteThread: (projectId, threadId) =>
+    request(`/projects/${projectId}/forum/${threadId}`, { method: 'DELETE' }),
 
   // ── Chat ──────────────────────────────────────────────────────────────────
-  getChatChannels: async (projectId) => {
-    await delay()
-    return clone(store.chatChannels[projectId] || [])
-  },
+  getChatChannels: (projectId) => request(`/projects/${projectId}/chat/channels`),
 
-  getChatMessages: async (projectId, channel) => {
-    await delay()
-    return clone((store.chatMessages[projectId] || {})[channel] || [])
-  },
+  getChatMessages: (projectId, channel) => request(`/projects/${projectId}/chat/${channel}/messages`),
 
-  sendChatMessage: async (projectId, channel, text, attachments = []) => {
-    assertNoSensitiveContent(text)
-    await delay(60)
-    const msg = {
-      id: `m${++_msgCounter}`,
-      sender: 'Alex Lim', unit: 'B-21-03', tier: 'Owner', verified: true,
-      text, attachments, editedAt: null,
-      time: new Date().toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false })
-    }
-    if (!store.chatMessages[projectId]) store.chatMessages[projectId] = {}
-    if (!store.chatMessages[projectId][channel]) store.chatMessages[projectId][channel] = []
-    store.chatMessages[projectId][channel].push(msg)
-    return clone(msg)
-  },
+  sendChatMessage: (projectId, channel, text, attachments = []) =>
+    request(`/projects/${projectId}/chat/${channel}/messages`, { method: 'POST', body: { text, attachments } }),
 
-  // One edit per message, sender only — mirrors
-  // PATCH /api/projects/:projectId/chat/:channel/messages/:messageId.
-  editChatMessage: async (projectId, channel, messageId, text) => {
-    assertNoSensitiveContent(text)
-    const msg = (store.chatMessages[projectId]?.[channel] || []).find(m => m.id === messageId)
-    if (!msg) throw new Error('Message not found')
-    if (msg.editedAt) throw new Error('This message has already been edited. Messages can only be edited once.')
-    await delay(60)
-    msg.text = text
-    msg.editedAt = new Date().toISOString()
-    return clone(msg)
-  },
+  editChatMessage: (projectId, channel, messageId, text) =>
+    request(`/projects/${projectId}/chat/${channel}/messages/${messageId}`, { method: 'PATCH', body: { text } }),
 
-  // Lets a resident remove their own message — mirrors the backend's
-  // DELETE /api/projects/:projectId/chat/:channel/messages/:messageId.
-  deleteChatMessage: async (projectId, channel, messageId) => {
-    await delay(60)
-    const channelMessages = store.chatMessages[projectId]?.[channel]
-    if (channelMessages) {
-      store.chatMessages[projectId][channel] = channelMessages.filter(m => m.id !== messageId)
-    }
-    return { ok: true }
-  },
+  deleteChatMessage: (projectId, channel, messageId) =>
+    request(`/projects/${projectId}/chat/${channel}/messages/${messageId}`, { method: 'DELETE' }),
 
   // ── Vendors ───────────────────────────────────────────────────────────────
-  getVendors: async (projectId) => {
-    await delay()
-    return clone(vendorsForProject(projectId))
-  },
+  // One global directory, filtered server-side to the project's state/city.
+  getVendors: (projectId) => request(`/projects/${projectId}/vendors`),
 
   // ── Petitions ─────────────────────────────────────────────────────────────
-  getPetitions: async (projectId) => {
-    await delay()
-    return clone(store.petitions[projectId] || [])
-  },
+  getPetitions: (projectId) => request(`/projects/${projectId}/petitions`),
 
-  createPetition: async (projectId, data) => {
-    assertNoSensitiveContent(data.title, data.description)
-    await delay()
-    const pet = {
-      ...data,
-      id: `pet${projectId.slice(1)}-${Date.now()}`,
-      signatures: 0,
-      signedByMe: false,
-      createdBy: 'Alex Lim (B-21-03)',
-      createdAt: new Date().toISOString().slice(0, 10)
-    }
-    if (!store.petitions[projectId]) store.petitions[projectId] = []
-    store.petitions[projectId].unshift(pet)
-    return clone(pet)
-  },
+  createPetition: (projectId, data) =>
+    request(`/projects/${projectId}/petitions`, {
+      method: 'POST',
+      body: { title: data.title, description: data.description, target: data.target }
+    }),
 
-  signPetition: async (projectId, petId) => {
-    await delay(60)
-    const pet = (store.petitions[projectId] || []).find(p => p.id === petId)
-    if (pet && !pet.signedByMe) {
-      pet.signatures += 1
-      pet.signedByMe = true
-    }
-    return clone(pet)
-  },
+  signPetition: (projectId, petitionId) =>
+    request(`/projects/${projectId}/petitions/${petitionId}/sign`, { method: 'POST' }),
 
   // ── Polls ─────────────────────────────────────────────────────────────────
-  getPolls: async (projectId) => {
-    await delay()
-    return clone(store.polls[projectId] || [])
-  },
+  getPolls: (projectId) => request(`/projects/${projectId}/polls`),
 
-  votePoll: async (projectId, pollId, optionId) => {
-    await delay(60)
-    const poll = (store.polls[projectId] || []).find(p => p.id === pollId)
-    if (poll && !poll.votedByMe) {
-      const opt = poll.options.find(o => o.id === optionId)
-      if (opt) opt.votes += 1
-      poll.votedByMe = optionId
-    }
-    return clone(poll)
-  },
+  votePoll: (projectId, pollId, optionId) =>
+    request(`/projects/${projectId}/polls/${pollId}/vote`, { method: 'POST', body: { optionId } }),
 
   // ── Defects ───────────────────────────────────────────────────────────────
-  getDefects: async (projectId) => {
-    await delay()
-    return clone(store.defects[projectId] || [])
-  },
+  getDefects: (projectId) => request(`/projects/${projectId}/defects`),
 
-  createDefect: async (projectId, data) => {
-    assertNoSensitiveContent(data.title, data.description)
-    await delay()
-    const defect = {
-      ...data,
-      id: `d${projectId.slice(1)}-${Date.now()}`,
-      status: 'Open',
-      reportedBy: 'Alex Lim',
-      reportedAt: new Date().toISOString().slice(0, 10),
-      matchingUnits: 1
-    }
-    if (!store.defects[projectId]) store.defects[projectId] = []
-    store.defects[projectId].unshift(defect)
-    return clone(defect)
-  },
+  createDefect: (projectId, data) =>
+    request(`/projects/${projectId}/defects`, {
+      method: 'POST',
+      body: {
+        title: data.title,
+        description: data.description,
+        category: data.category,
+        block: data.block || '-',
+        floorRange: data.floorRange || '-',
+        unit: data.unit || '-',
+        attachments: data.attachments || []
+      }
+    }),
 
   // ── Documents ─────────────────────────────────────────────────────────────
-  getDocuments: async (projectId) => {
-    await delay()
-    return clone(store.documents[projectId] || [])
-  },
+  getDocuments: (projectId) => request(`/projects/${projectId}/documents`),
 
   // ── References ────────────────────────────────────────────────────────────
-  getReferences: async (projectId) => {
-    await delay()
-    return clone(store.references[projectId] || [])
-  },
+  getReferences: (projectId) => request(`/projects/${projectId}/references`),
 
-  addReference: async (projectId, data) => {
-    await delay()
-    const ref = {
-      ...data,
-      id: `ref-${projectId}-${Date.now()}`,
-      uploadedBy: 'Admin',
-      date: new Date().toISOString().slice(0, 10),
-      attachments: data.attachments || []
-    }
-    if (!store.references[projectId]) store.references[projectId] = []
-    store.references[projectId].unshift(ref)
-    return clone(ref)
-  },
+  // Admin-only. `uploadedBy` is set from the acting admin's name server-side.
+  addReference: (projectId, data) =>
+    request(`/projects/${projectId}/references`, {
+      method: 'POST',
+      body: {
+        type: data.type,
+        title: data.title,
+        description: data.description || '',
+        date: data.date,
+        progress: data.progress,
+        attachments: data.attachments || []
+      }
+    }),
 
-  deleteReference: async (projectId, refId) => {
-    await delay(60)
-    if (store.references[projectId]) {
-      store.references[projectId] = store.references[projectId].filter(r => r.id !== refId)
-    }
-    return { ok: true }
-  },
+  deleteReference: (projectId, refId) =>
+    request(`/projects/${projectId}/references/${refId}`, { method: 'DELETE' }),
 
   // ── Fees ──────────────────────────────────────────────────────────────────
-  getFees: async (projectId) => {
-    await delay()
-    return clone(store.feeTracker[projectId] || null)
-  },
+  // null when the project has no tracker set up — FeesPanel renders an empty
+  // state for that, so it must stay null rather than becoming {}.
+  getFees: (projectId) => request(`/projects/${projectId}/fees`),
 
   // ── Community requests ────────────────────────────────────────────────────
-  requestCommunity: async (_data) => {
-    await delay()
-    return { ok: true }
-  }
+  // Public and unauthenticated — this is how someone asks for a community that
+  // isn't on the platform yet. Admins read them back via GET.
+  requestCommunity: (data) =>
+    request('/community-requests', {
+      method: 'POST',
+      body: {
+        name: data.name,
+        city: data.city,
+        state: data.state,
+        developer: data.developer || '',
+        note: data.note || ''
+      }
+    })
 }

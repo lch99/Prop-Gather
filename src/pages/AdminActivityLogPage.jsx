@@ -26,7 +26,7 @@ export default function AdminActivityLogPage() {
   const [entries, setEntries] = useState(null)
 
   useEffect(() => {
-    api.getAuditLog(user?.role).then(setEntries)
+    api.getAuditLog(user?.role).then(setEntries).catch(() => setEntries([]))
   }, [user?.role])
 
   return (

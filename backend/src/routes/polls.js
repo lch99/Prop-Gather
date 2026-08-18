@@ -51,9 +51,9 @@ pollsRouter.post('/:pollId/vote', requireAuth, requireMembership, validate(voteS
   const option = await db.get('SELECT * FROM poll_options WHERE id = ? AND poll_id = ?', [req.body.optionId, poll.id])
   if (!option) return next(badRequest('That poll option is no longer available. Please refresh and try again.'))
 
-  // INSERT IGNORE is MySQL's spelling of SQLite's INSERT OR IGNORE. The primary
-  // key on (poll_id, user_id) is what makes voting idempotent — a second vote
-  // from the same resident is silently dropped rather than counted twice.
+  // The primary key on (poll_id, user_id) plus INSERT IGNORE is what makes
+  // voting idempotent — a second vote from the same resident is silently
+  // dropped rather than counted twice.
   await db.run('INSERT IGNORE INTO poll_votes (poll_id, user_id, option_id) VALUES (?, ?, ?)', [poll.id, req.user.id, option.id])
   res.json(await serialize(db, poll, req.user.id))
 }))

@@ -44,17 +44,16 @@ built from ordered `.sql` files in `src/db/migrations/`, tracked in a
 `migrations` table so each file only runs once. `src/index.js` awaits
 `runMigrations()` before listening, so a broken migration fails the boot rather
 than one endpoint later; `npm run migrate` applies pending ones without starting
-the server. Seed data mirroring `src/demoData.js` is in `src/db/seed.js`.
+the server. Seed data is in `src/db/seed.js`.
 
 To reset local data: `DROP DATABASE propgather; CREATE DATABASE propgather;`
 then restart — migrations and (with `SEED_DEMO_DATA=true`) the seed rerun.
 
 ### Every query is asynchronous
 
-This backend previously used `better-sqlite3`, which was synchronous. `mysql2`
-is not, so every query is awaited and every function containing one is `async`.
-`src/db/index.js` exposes a small surface deliberately shaped like the idioms it
-replaced, so the SQL in routes survived the migration unchanged:
+`mysql2` returns promises, so every query is awaited and every function
+containing one is `async`. `src/db/index.js` exposes a small surface over the
+pool:
 
 ```js
 await db.get(sql, params)   // one row, or undefined
@@ -63,8 +62,8 @@ await db.run(sql, params)   // { changes, insertId }
 await withTransaction(async (tx) => { … })   // all queries pinned to one connection
 ```
 
-Named parameters use `:name` (mysql2's `namedPlaceholders`), where SQLite used
-`@name`. Express 4 doesn't observe promises returned from handlers, so async
+Named parameters use `:name` (mysql2's `namedPlaceholders`). Express 4 doesn't
+observe promises returned from handlers, so async
 route handlers are wrapped in `wrap()` from `src/util/asyncHandler.js` —
 otherwise a rejection hangs the request instead of reaching the error middleware.
 
@@ -96,8 +95,8 @@ Type choices that are load-bearing, not incidental:
 - `rating` is `DOUBLE`, not `DECIMAL` — mysql2 returns `DECIMAL` as a string
 
 `0004_performance_indexes.sql` covers the queries the routes and jobs actually
-run. It's much smaller than its SQLite ancestor because **InnoDB auto-indexes
-every FK column**; what remains is the composites that also answer an `ORDER BY`,
+run. It's small because **InnoDB auto-indexes every FK column**; what remains is
+the composites that also answer an `ORDER BY`,
 `forum_upvotes(user_id)` (the one user column with no FK), and the retention
 purge's filter. `community_memberships` is deliberately absent — the app's
 hottest query is already served by its `UNIQUE(user_id, project_id)` index.
@@ -351,8 +350,31 @@ Password hashing cost is lowered via `BCRYPT_ROUNDS=4` in `vitest.config.js`
 purely for test speed — it dominates otherwise (measured: ~2.9s of a 4.2s seed at
 the real cost factor). Production always uses 10.
 
-## Not yet wired up
+## Wired up to the frontend
 
-The frontend (`src/api.js`) still runs entirely in-memory and does not call this
-server. Pointing it at these endpoints (swapping `api.js`'s in-memory store for
-`fetch` calls, adding the JWT to `auth.jsx`) is a separate follow-up.
+The frontend calls this server: `src/api.js` is an HTTP client over these
+endpoints, `src/apiClient.js` holds the base URL and bearer token, and
+`src/auth.jsx` stores the JWT from `/api/auth/login` and `/api/auth/register`.
+
+Two things to keep in mind when changing routes here:
+
+- **CORS is an allowlist** (`CORS_ORIGINS`, see `src/middleware/cors.js`). Unset,
+  only the local dev origins are allowed — so a deployment that doesn't set it
+  blocks its own frontend. The effective list is printed at boot.
+- **Response shapes are a contract.** Renaming a serialized field breaks the
+  frontend silently — the tests here won't catch it, since there is no frontend
+  test suite. Grep `src/` for the field name before renaming.
+
+### Endpoints with no frontend yet
+
+These work and are tested, but nothing in the UI calls them — worth knowing
+before assuming a capability is missing rather than just unexposed:
+
+| Endpoint | What's missing in the UI |
+|---|---|
+| `PATCH /projects/:id/defects/:defectId` | No way to change a defect's status, so reports stay `Open` forever |
+| `DELETE` on defects / petitions / polls / documents | No moderation or clean-up controls |
+| `PATCH /projects/:id/petitions/:petitionId` | Petition editing (creator, before any signature) |
+| `GET`/`DELETE /community-requests` | "Add my community" submissions are write-only — nothing reads them back |
+| `GET`/`DELETE /vendors` | No vendor-directory admin screen |
+| `DELETE /auth/users/:id` | PDPA erasure has no admin control; it's API-only |

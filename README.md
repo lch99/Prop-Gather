@@ -9,13 +9,10 @@ Live demo: https://lch99.github.io/Prop-Gather
 
 ## Status
 
-The **frontend is a fully working demo** — it runs entirely against an
-in-memory mock API (`src/api.js` + `src/demoData.js`), no server required.
-
-A **real backend** (`backend/`) exists in parallel — Express + MySQL with
-real auth, persistence, and per-community access control — but the frontend
-does not call it yet. Wiring `src/api.js` up to `backend`'s REST endpoints is
-the next major step (see `backend/README.md` → "Not yet wired up").
+The frontend and backend are **wired together**. `src/api.js` is an HTTP client
+for the Express + MySQL API in `backend/` — real JWT auth, real persistence, and
+per-community access control enforced server-side. **Running the app now requires
+the backend and a MySQL server**; there is no offline mock mode.
 
 ## Tech stack
 
@@ -28,15 +25,29 @@ stylesheet (`src/index.css`) for animations and responsive breakpoints.
 
 ## Getting started (frontend)
 
+Start the backend first (next section) — the frontend has nothing to read without
+it.
+
 ```
 npm install
-npm run dev       # http://localhost:5173
+cp .env.example .env.local   # optional; the default points at localhost:4000
+npm run dev                   # http://localhost:5173
 ```
 
-Demo accounts (see `src/auth.jsx`):
-- `resident@propgather.com` / `resident123` — verified resident
-- `admin@propgather.com` / `admin123` — platform admin
-- any other email — accepted as a resident, no password check, to keep the demo easy to explore
+Sign-in is real: accounts live in the database and passwords are bcrypt-hashed.
+With `SEED_DEMO_DATA=true` you get the seeded accounts from
+`backend/src/db/seed.js` — `resident@propgather.com` / `resident123` and
+`admin@propgather.com` / `admin123`. The login page lists them only in dev builds
+(see `VITE_SHOW_DEMO_LOGINS` in `.env.example`). Any other account has to be
+registered, and a fresh production database starts with no accounts at all —
+create the first admin with `npm run create-admin` in `backend/`.
+
+Configuration (`.env.example`, inlined at build time — rebuild to change):
+- `VITE_API_URL` — API base URL including `/api`. Defaults to
+  `http://localhost:4000/api` in dev and `/api` in a production build, the latter
+  being correct when a reverse proxy serves both from one origin.
+- `VITE_SHOW_DEMO_LOGINS` — show the seeded demo credentials on the login page.
+  Dev-only by default.
 
 Other scripts:
 ```
@@ -45,7 +56,12 @@ npm run preview    # preview the production build locally
 npm run deploy      # build + publish dist/ to GitHub Pages
 ```
 
-## Getting started (backend — optional, not yet wired to the frontend)
+Note on the GitHub Pages demo: Pages serves static files only, so that build
+needs `VITE_API_URL` pointing at a publicly reachable API origin, and that
+origin's CORS and the S3 bucket's CORS (`backend/infra/s3-cors.json`) must both
+allow `https://lch99.github.io`.
+
+## Getting started (backend — required)
 
 Needs a local **MySQL 8**. Create the two databases first (the app's, and a
 scratch one for tests — the suite empties it before every test):
@@ -72,9 +88,9 @@ retention) for the identity-document upload flow.
 
 ```
 src/
-  api.js                 in-memory demo API (mirrors backend's REST contract)
-  demoData.js             seed data for the demo API
-  auth.jsx                 demo auth context, RequireAuth route guard
+  api.js                 HTTP client for the backend REST API
+  apiClient.js            fetch plumbing: base URL, bearer token, error mapping
+  auth.jsx                 auth context (JWT), RequireAuth route guard
   theme.js                 design tokens (colors, buttons, badges, chips)
   components/               shared UI (Layout, Attachments, PollView, Badges…)
   pages/                    top-level routed pages

@@ -1,5 +1,5 @@
 import express from 'express'
-import cors from 'cors'
+import { corsMiddleware } from './middleware/cors.js'
 import { optionalAuth } from './middleware/auth.js'
 import { requireProjectExists } from './middleware/project.js'
 import { authRouter } from './routes/auth.js'
@@ -20,7 +20,8 @@ import { feesRouter } from './routes/fees.js'
 export function createApp() {
   const app = express()
 
-  app.use(cors())
+  // Restricted to CORS_ORIGINS (dev origins when unset) — see middleware/cors.js.
+  app.use(corsMiddleware())
   app.use(express.json({ limit: '15mb' }))
   app.use(optionalAuth)
 

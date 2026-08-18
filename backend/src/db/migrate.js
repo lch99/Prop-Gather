@@ -35,8 +35,8 @@ async function ensureDatabase() {
 // Applies every *.sql file in migrations/ that isn't already recorded in the
 // migrations table, in filename order.
 //
-// ⚠️ Unlike the SQLite version this replaced, a migration is NOT atomic. MySQL
-// implicitly commits before and after every DDL statement, so `ALTER TABLE`
+// ⚠️ A migration is NOT atomic. MySQL implicitly commits before and after
+// every DDL statement, so `ALTER TABLE`
 // cannot be rolled back — a file that fails halfway leaves its earlier
 // statements applied. The runner records a migration only after the whole file
 // succeeds, so the next boot retries it from the top. That is why every
