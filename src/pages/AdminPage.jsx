@@ -15,11 +15,19 @@ export default function AdminPage() {
   const [queue, setQueue] = useState(null)
   const [projects, setProjects] = useState({})
 
-  const reload = useCallback(() => { api.getVerificationQueue(user?.role).then(setQueue) }, [user?.role])
+  // Falling back to [] on failure matters now that this is a network call: the
+  // page renders skeletons while `queue` is null, so an error that left it null
+  // would show them forever instead of the empty state.
+  const reload = useCallback(
+    () => api.getVerificationQueue(user?.role).then(setQueue).catch(() => setQueue([])),
+    [user?.role]
+  )
 
   useEffect(() => {
     reload()
-    api.getProjects().then(list => setProjects(Object.fromEntries(list.map(p => [p.id, p]))))
+    api.getProjects()
+      .then(list => setProjects(Object.fromEntries(list.map(p => [p.id, p]))))
+      .catch(() => setProjects({}))
   }, [reload])
 
   const pendingCount = queue?.filter(a => a.status === 'Pending').length || 0
@@ -76,7 +84,10 @@ export default function AdminPage() {
       </div>
 
       {active === 'overview' && <AdminOverviewPage />}
-      {active === 'verification' && <AdminVerificationPage queue={queue} projects={projects} reload={reload} actor={user} />}
+      {/* No `actor` prop: the backend attributes a decision to whoever holds the
+          bearer token, so passing the acting admin from the client would be
+          decorative at best and forgeable at worst. */}
+      {active === 'verification' && <AdminVerificationPage queue={queue} projects={projects} reload={reload} />}
       {active === 'references' && <AdminReferencesPage />}
       {active === 'activity' && <AdminActivityLogPage />}
     </div>

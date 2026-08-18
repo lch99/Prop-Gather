@@ -6,11 +6,19 @@ import { TierBadge } from '../components/Badges'
 
 export default function MyCommunitiesPage() {
   const [me, setMe] = useState(null)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    api.getMe().then(setMe)
+    api.getMe().then(setMe).catch(err => setError(err.message))
   }, [])
 
+  if (error) {
+    return (
+      <div style={{ maxWidth: 1000, margin: '0 auto', padding: 24 }}>
+        <div role="alert" style={{ ...card, padding: 20, color: C.danger }}>{error}</div>
+      </div>
+    )
+  }
   if (!me) return <div style={{ maxWidth: 1000, margin: '0 auto', padding: 24, color: C.textMuted }}>Loading...</div>
 
   return (
@@ -28,6 +36,23 @@ export default function MyCommunitiesPage() {
       </div>
 
       <div style={{ maxWidth: 1000, margin: '0 auto', padding: '24px 24px 28px' }}>
+      {/* Every new account starts with none of these — the demo's fixed resident
+          always had two, so this state never used to be reachable. */}
+      {me.communities.length === 0 && (
+        <div style={{ ...card, padding: 28, textAlign: 'center' }}>
+          <div style={{ fontSize: 34, marginBottom: 10 }}>🏘️</div>
+          <h3 style={{ margin: '0 0 8px', color: C.navy }}>No verified communities yet</h3>
+          <p style={{ margin: '0 auto 16px', color: C.textMuted, fontSize: 14, lineHeight: 1.6, maxWidth: 420 }}>
+            Find your condo or landed project in the directory, then upload a proof of ownership. A platform
+            admin reviews it — usually within 24 hours — and your community unlocks here.
+          </p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Link to="/discover"><button style={button('primary')}>Browse communities</button></Link>
+            <Link to="/register"><button style={button('outline')}>Verify my property</button></Link>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gap: 16 }}>
         {me.communities.map(c => (
           <div key={c.projectId} className="pg-card-hover" style={{ ...card, padding: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { C, card, button } from '../theme'
-import { useAuth, DEMO_ACCOUNTS } from '../auth'
+import { useAuth, DEMO_ACCOUNTS, SHOW_DEMO_LOGINS } from '../auth'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -154,31 +154,37 @@ export default function LoginPage() {
         </p>
       </form>
 
-      <div style={{ ...card, padding: 18, marginTop: 16 }}>
-        <div style={{ fontSize: 14.5, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
-          🔑 Demo logins
+      {/* Seeded dev accounts only — never rendered in a production build, where
+          these credentials don't exist and printing any would be a giveaway.
+          See SHOW_DEMO_LOGINS in auth.jsx. */}
+      {SHOW_DEMO_LOGINS && (
+        <div style={{ ...card, padding: 18, marginTop: 16 }}>
+          <div style={{ fontSize: 14.5, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
+            🔑 Demo logins
+          </div>
+          <p style={{ margin: '0 0 12px', fontSize: 13.5, color: C.textMuted, lineHeight: 1.55 }}>
+            Click an account to fill the form, then press <strong>Log in</strong>. These exist only in a
+            database seeded with <code>SEED_DEMO_DATA=true</code>.
+          </p>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {DEMO_ACCOUNTS.map(account => (
+              <button key={account.email} type="button" onClick={() => fillDemo(account)} style={demoRow}>
+                <span style={{
+                  ...badgeChip,
+                  color: account.role === 'admin' ? C.accent : C.blue,
+                  background: account.role === 'admin' ? C.accentLight : C.blueLight
+                }}>
+                  {account.label}
+                </span>
+                <span style={{ display: 'grid', gap: 2, fontFamily: 'ui-monospace, Menlo, Consolas, monospace' }}>
+                  <span style={{ color: C.text, fontSize: 14 }}>{account.email}</span>
+                  <span style={{ color: C.textMuted, fontSize: 14 }}>{account.password}</span>
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
-        <p style={{ margin: '0 0 12px', fontSize: 13.5, color: C.textMuted, lineHeight: 1.55 }}>
-          Click an account to fill the form, then press <strong>Log in</strong>.
-        </p>
-        <div style={{ display: 'grid', gap: 10 }}>
-          {DEMO_ACCOUNTS.map(account => (
-            <button key={account.email} type="button" onClick={() => fillDemo(account)} style={demoRow}>
-              <span style={{
-                ...badgeChip,
-                color: account.role === 'admin' ? C.accent : C.blue,
-                background: account.role === 'admin' ? C.accentLight : C.blueLight
-              }}>
-                {account.label}
-              </span>
-              <span style={{ display: 'grid', gap: 2, fontFamily: 'ui-monospace, Menlo, Consolas, monospace' }}>
-                <span style={{ color: C.text, fontSize: 14 }}>{account.email}</span>
-                <span style={{ color: C.textMuted, fontSize: 14 }}>{account.password}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
     </div>
   )
 }

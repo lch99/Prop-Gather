@@ -248,6 +248,11 @@ export default function DiscoverPage() {
     api.getProjects().then(data => {
       setProjects(data)
       setLoading(false)
+    }).catch(() => {
+      // Clearing `loading` matters more than the empty list: the directory shows
+      // skeleton cards while loading, and leaving it true renders them forever.
+      setProjects([])
+      setLoading(false)
     })
   }, [])
 

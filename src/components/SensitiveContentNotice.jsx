@@ -5,9 +5,10 @@ import { sensitiveContentWarning } from '../sensitiveContent'
 // (NRIC, payment card) before they post it somewhere every verified member of
 // the community can read and that has no edit endpoint.
 //
-// Advisory only — the actual block lives in api.js and, once wired up, the
-// backend's blockSensitiveContent middleware. Rendering nothing when the text
-// is clean keeps this out of the way for the overwhelming majority of posts.
+// Advisory only — the actual block is the backend's blockSensitiveContent
+// middleware, which rejects the same inputs with a 400. Rendering nothing when
+// the text is clean keeps this out of the way for the overwhelming majority of
+// posts.
 //
 // Uses `warning` rather than `danger` colours on purpose: the resident hasn't
 // done anything wrong, they're about to make a mistake we can still catch.

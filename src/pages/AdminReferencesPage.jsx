@@ -42,7 +42,9 @@ export default function AdminReferencesPage() {
     if (paramType && REFERENCE_TYPES.some(t => t.key === paramType)) setForm(blankForm(paramType))
   }, [searchParams, projects])
 
-  const load = () => { if (projectId) api.getReferences(projectId).then(setRefs) }
+  // `refs === null` renders skeletons, so a failed fetch has to land on [] or
+  // they never resolve into the empty state.
+  const load = () => { if (projectId) api.getReferences(projectId).then(setRefs).catch(() => setRefs([])) }
   useEffect(() => { setRefs(null); load() }, [projectId])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))

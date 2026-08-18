@@ -9,7 +9,9 @@ function fmtRM(n) {
 export default function FeesPanel({ projectId }) {
   const [fees, setFees] = useState(undefined)
 
-  useEffect(() => { api.getFees(projectId).then(setFees) }, [projectId])
+  // `undefined` is the loading state and `null` the "no tracker" empty state, so
+  // a failed fetch has to land on null rather than staying undefined forever.
+  useEffect(() => { api.getFees(projectId).then(setFees).catch(() => setFees(null)) }, [projectId])
 
   if (fees === undefined) return <div style={{ color: C.textMuted }}>Loading...</div>
   if (!fees) return <div style={{ textAlign: 'center', color: C.textMuted, padding: 24 }}>No fee data available for this project.</div>

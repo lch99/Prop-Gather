@@ -199,9 +199,8 @@ applicationsRouter.post('/:id/decision', requireAuth, requireRole('admin'), vali
   await withTransaction(async (tx) => {
     await tx.run('UPDATE applications SET status = ?, decided_at = ?, decided_by = ? WHERE id = ?', [status, decidedAt, req.user.id, app.id])
     if (status === 'Approved') {
-      // MySQL's upsert. SQLite spelled this ON CONFLICT(user_id, project_id) DO
-      // UPDATE SET … = excluded.…; here the UNIQUE key on (user_id, project_id)
-      // is what ON DUPLICATE KEY matches against.
+      // Upsert: the UNIQUE key on (user_id, project_id) is what ON DUPLICATE
+      // KEY matches against.
       await tx.run(`
         INSERT INTO community_memberships (id, user_id, project_id, tier, unit, verified_at)
         VALUES (:id, :userId, :projectId, :tier, :unit, :verifiedAt)

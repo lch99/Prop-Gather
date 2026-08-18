@@ -34,11 +34,9 @@ const sendSchema = z.object({
   attachments: z.array(attachmentSchema).max(6).optional().default([])
 })
 
-// Author details are joined in rather than fetched per message. Under
-// better-sqlite3 a lookup per row was an in-process function call costing
-// microseconds; against MySQL each one is a network round trip, so a busy
-// channel turned one request into hundreds of queries. The output shape is
-// unchanged — only the number of round trips is.
+// Author details are joined in rather than fetched per message: a lookup per
+// row would be a network round trip, turning one request on a busy channel into
+// hundreds of queries.
 const MESSAGE_SELECT = `
   SELECT m.*, u.name AS sender_name, cm.unit AS sender_unit, cm.tier AS sender_tier
   FROM chat_messages m

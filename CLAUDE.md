@@ -23,19 +23,30 @@ setup is "compliant."
 
 ## Two codebases, one contract
 
-- **`src/`** — the React frontend. This is what actually ships (GitHub
-  Pages demo). It runs against `src/api.js`, an in-memory mock API seeded
-  from `src/demoData.js`. All mutations (upvotes, posts, votes, verification
-  decisions) live only in memory and reset on page refresh.
-- **`backend/`** — an Express + MySQL 8 (`mysql2`) server implementing the same
-  data contract with real persistence, JWT auth, and per-community access
-  control. **The frontend does not call it yet.** Treat the two as separate
-  efforts unless a task explicitly asks to wire them together.
+- **`src/`** — the React frontend. `src/api.js` is an HTTP client for the
+  backend; `src/apiClient.js` under it owns the base URL, the bearer token,
+  and turning error responses into `ApiError`. There is **no mock mode** — the
+  app needs the backend and a MySQL server running to show anything.
+- **`backend/`** — the Express + MySQL 8 (`mysql2`) server. It is the single
+  source of truth for data, auth, and access control.
 
-When adding a feature to `src/api.js`, check whether `backend/src/routes/`
-has (or should get) the matching endpoint — they're meant to stay in sync so
-the eventual swap-over is mechanical. Don't assume changes need to happen in
-both places unless the task is about that integration.
+They are wired together, so a feature usually lands in both: an endpoint in
+`backend/src/routes/` (plus its test file) and a method in `src/api.js`. When
+you change a response shape on one side, grep the other for the field —
+serialization lives in `backend/src/util/serialize.js` and the per-route
+`serialize()` helpers.
+
+Two rules the wiring depends on:
+
+- **The client never asserts identity or role.** Authorship, the deciding
+  admin, and `uploadedBy` all come from the JWT server-side. Don't reintroduce
+  an `actor` argument into `src/api.js` — the `role` arguments that remain
+  (`getVerificationQueue`, `getAuditLog`, `createProject`) are UX
+  short-circuits to skip a doomed round trip, never the access boundary.
+- **Loading states must survive a failed request.** Several pages use
+  `null`/`undefined` state as "still loading" and render skeletons, so a
+  rejected fetch has to land on a concrete empty value or the skeleton never
+  resolves.
 
 ## Frontend conventions
 
@@ -61,11 +72,15 @@ both places unless the task is about that integration.
 - **Brand colors**: primary blue `#4081C6`, primary red/accent `#C74B54`
   (from the PropGather.com logo). Don't introduce off-brand hues for primary
   actions; use `chipPalette` for varied category/type chips instead.
-- **Auth**: `src/auth.jsx` is demo-only — two fixed accounts
-  (`resident@propgather.com`, `admin@propgather.com`) plus "any other email is
-  treated as a resident, no password check" so the prototype stays easy to
-  explore. Don't add real password/security logic here; that belongs in
-  `backend/`.
+- **Auth**: `src/auth.jsx` is real — `login`/`signup` call the backend and store
+  the returned JWT via `apiClient.js`, honouring the "keep me signed in" choice
+  (localStorage vs sessionStorage). It caches the user profile alongside the
+  token only to avoid a logged-out flicker on first paint; the token is the
+  credential, and `refresh()` re-reads the profile from `/auth/me` (call it
+  after anything that changes memberships). A 401 on a request that carried a
+  token clears the session. `DEMO_ACCOUNTS` are the backend's seeded dev
+  accounts and are only rendered when `SHOW_DEMO_LOGINS` is on — dev-only by
+  default. Password rules and rate limiting belong in `backend/`, not here.
 - **File attachments**: use the shared `useAttachments` / `AttachmentPicker` /
   `AttachmentList` from `src/components/Attachments.jsx` (used by forum,
   chat, defect reports, and registration) rather than building a new
@@ -79,9 +94,8 @@ both places unless the task is about that integration.
   `POST /api/applications` → `POST /api/applications/:id/decision`). Admins
   bypass the membership check everywhere. See `backend/src/middleware/`.
 - **Every DB call is async.** `src/db/index.js` exposes `db.get/all/run` plus
-  `withTransaction(async tx => …)` over a `mysql2` pool — shaped like the
-  `better-sqlite3` idioms they replaced, so route SQL stayed unchanged. Named
-  params are `:name`, not `@name`. Async route handlers must be wrapped in
+  `withTransaction(async tx => …)` over a `mysql2` pool. Named params are
+  `:name`. Async route handlers must be wrapped in
   `wrap()` (`src/util/asyncHandler.js`) or Express 4 swallows the rejection and
   the request hangs.
 - MySQL 8 via `MYSQL_*` env vars. Schema is built from ordered `.sql` files in
@@ -122,4 +136,7 @@ cd backend && npm test        # backend test suite (needs local MySQL)
 ```
 
 There is currently no frontend test suite — verify UI changes by running
-the dev server and checking the affected page(s) at mobile width.
+the dev server and checking the affected page(s) at mobile width. The backend
+(and its MySQL) has to be running too, or every page loads empty. `VITE_API_URL`
+points the frontend somewhere other than `http://localhost:4000/api`; it's
+inlined at build time, so changing it needs a restart/rebuild.

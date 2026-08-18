@@ -148,10 +148,9 @@ sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
-Less critical than it was on the SQLite build (nothing compiles from source any
-more), but still worth having: MySQL and Node now share this box, and swap is
-what turns a memory spike into a slow moment rather than an OOM kill of
-`mysqld`.
+Nothing compiles from source, so this is prudence rather than a prerequisite —
+but still worth having: MySQL and Node share this box, and swap is what turns a
+memory spike into a slow moment rather than an OOM kill of `mysqld`.
 
 **Check:** `free -h` shows a 2.0Gi swap line.
 
@@ -167,10 +166,8 @@ Why each: **mysql-server** is the database (configured in
 [DEPLOYMENT.md](DEPLOYMENT.md) §2.4 — user, grants, buffer pool); **nginx**
 terminates TLS in front of Node; the rest is security housekeeping.
 
-No compiler toolchain is needed. The SQLite build required `build-essential` and
-`python3` to compile `better-sqlite3` from source, which was the classic cause of
-a failed first `npm ci` on a small VPS. `mysql2` is pure JavaScript, so that
-whole failure mode is gone.
+No compiler toolchain is needed — `mysql2` is pure JavaScript, so there is
+nothing to build from source on the first `npm ci`.
 
 **Check:** `systemctl is-active mysql` prints `active`.
 

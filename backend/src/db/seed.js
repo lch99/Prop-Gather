@@ -1,5 +1,5 @@
-// Seeds the database with demo data mirroring the frontend's src/demoData.js,
-// so the backend and the existing frontend demo present identical content.
+// Seeds the database with representative demo content — enough of every
+// resource for the frontend to exercise each page against a real API.
 import { getDb, withTransaction } from './index.js'
 import { hashPassword } from '../util/auth.js'
 import { id } from '../util/ids.js'
@@ -147,8 +147,7 @@ const defects = {
 
 // One multi-row INSERT per table instead of one round trip per row.
 //
-// This seed writes ~1,600 rows. Under better-sqlite3 that was 1,600 in-process
-// calls and effectively free; against MySQL it was 1,600 network round trips —
+// This seed writes ~1,600 rows. Unbatched that is ~1,600 network round trips —
 // six seconds per seed, and the test suite reseeds before every test, which put
 // a full run at around half an hour. Batched, the same work is ~20 round trips.
 //
