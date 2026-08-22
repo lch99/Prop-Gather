@@ -52,7 +52,7 @@ isn't in the repo, and the server would die on boot with
 git add -A                 # -A, not -a: includes the new files
 git status                 # confirm the three files above are staged
 git commit -m "..."
-git push origin master
+git push origin main
 ```
 
 - [ ] `git status` is clean before you deploy
@@ -93,7 +93,7 @@ that the R2 bucket does too ([backend/infra/s3-cors.json](backend/infra/s3-cors.
 otherwise the site loads but every document upload fails.
 
 `npm run deploy` publishes **whatever is in your local `dist/`** to the
-`gh-pages` branch. It does not read `master` on GitHub. So commit and push your
+`gh-pages` branch. It does not read `main` on GitHub. So commit and push your
 source first, then deploy — otherwise the live site and the repo drift apart.
 
 Pages serves the new build within ~1 minute. Hard-refresh (Ctrl+Shift+R) — the
@@ -654,7 +654,7 @@ curl -X POST https://api.propgather.com/api/auth/login \
 
 ```bash
 cd /opt/propgather
-sudo -u propgather git pull origin master
+sudo -u propgather git pull origin main
 cd backend
 sudo -u propgather npm ci --omit=dev
 sudo systemctl restart propgather
@@ -951,7 +951,7 @@ stores a real JWT. Consequences that now apply to every deploy:
 |---|---|---|
 | `ERR_MODULE_NOT_FOUND` on boot, clean local tests | untracked file never committed | Part 0 — `git add -A` |
 | Pages site blank / 404s on JS and CSS | `base` mismatch | Check `base` vs. the URL; inspect `dist/index.html` |
-| Deployed site doesn't match the repo | `deploy` published a stale local `dist/` | Push `master`, rebuild, redeploy |
+| Deployed site doesn't match the repo | `deploy` published a stale local `dist/` | Push `main`, rebuild, redeploy |
 | Every page empty, "can't reach PropGather" | backend down, or `VITE_API_URL` wrong/stale in the build | `curl https://<api>/api/health`; rebuild with the right `VITE_API_URL` |
 | Login works, then everything 401s | `JWT_SECRET` changed between requests, or unset across restarts | Set it explicitly and keep it stable (2.5) |
 | Pages/browser console shows CORS errors on `/api` | `CORS_ORIGINS` doesn't list the frontend origin | Set it, restart, check the `CORS: allowing …` boot log |
