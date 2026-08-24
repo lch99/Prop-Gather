@@ -115,12 +115,18 @@ see CLAUDE.md):
 
 ### Two things that are deliberately the way they are
 
-**`base: '/Prop-Gather/'`** in [vite.config.js](vite.config.js) — Pages serves
-from a subpath. Vite rewrites asset URLs at build time (`/favicon.png` →
-`/Prop-Gather/favicon.png`). 404s on CSS/JS after a deploy trace back here;
-check `dist/index.html`. Runtime asset references must use
+**The base path is set per deploy target, not in the working tree.**
+[vite.config.js](vite.config.js) declares `base: '/'` because the live site
+serves the app from a domain root. GitHub Pages serves from a subpath, so
+`predeploy` overrides it with `vite build --base=/Prop-Gather/` — nothing to
+edit by hand for either target.
+
+Vite rewrites asset URLs at build time (`/favicon.png` →
+`/Prop-Gather/favicon.png` for Pages). 404s on CSS/JS after a deploy trace back
+here; check `dist/index.html`. Runtime asset references must use
 `` import.meta.env.BASE_URL `` (as
-[Layout.jsx:55](src/components/Layout.jsx#L55) does), never a bare `/brand/...`.
+[Layout.jsx:55](src/components/Layout.jsx#L55) does), never a bare `/brand/...`,
+so they stay correct under both bases.
 
 **`HashRouter`** in [main.jsx:3](src/main.jsx#L3) — URLs look like
 `/Prop-Gather/#/projects/p1`. Pages has no server-side rewrite, so a
@@ -130,8 +136,9 @@ a `404.html` SPA fallback, or you break every shared link.
 ### Custom domain (e.g. propgather.com), when you get there
 
 1. Add `public/CNAME` containing just `propgather.com`.
-2. Change `base` in [vite.config.js](vite.config.js) to `'/'` — an apex domain
-   serves from root; leaving `/Prop-Gather/` 404s every asset.
+2. Nothing to change — `base` is already `'/'`, which is what an apex domain
+   needs. Build with `npm run build` rather than `npm run deploy`, since the
+   latter targets the Pages subpath.
 3. Point DNS at Pages → Settings → Pages → Custom domain → **Enforce HTTPS**.
 4. Update `AllowedOrigins` in
    [backend/infra/s3-cors.json](backend/infra/s3-cors.json) and the backend's
