@@ -380,13 +380,28 @@ export default function DiscoverPage() {
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ ...card, padding: '48px 24px', textAlign: 'center' }}>
-            <h3 style={{ margin: '0 0 6px', color: C.navy }}>No projects match your search</h3>
-            <p style={{ margin: '0 0 16px', color: C.textMuted, fontSize: 14 }}>
-              Try a different name, city, or clear your filters.
-            </p>
-            <p style={{ margin: '0 0 12px', color: C.textMuted, fontSize: 14 }}>
-              Still can't find your community?
-            </p>
+            {/* An empty catalogue and a search that matched nothing look identical
+                here, but "clear your filters" is useless advice when there are no
+                filters set and nothing to clear — so tell the two apart. */}
+            {projects.length === 0 ? (
+              <>
+                <h3 style={{ margin: '0 0 6px', color: C.navy }}>No communities listed yet</h3>
+                <p style={{ margin: '0 0 16px', color: C.textMuted, fontSize: 14 }}>
+                  PropGather is just getting started in your area. Tell us where you
+                  live and we'll add it.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 style={{ margin: '0 0 6px', color: C.navy }}>No projects match your search</h3>
+                <p style={{ margin: '0 0 16px', color: C.textMuted, fontSize: 14 }}>
+                  Try a different name, city, or clear your filters.
+                </p>
+                <p style={{ margin: '0 0 12px', color: C.textMuted, fontSize: 14 }}>
+                  Still can't find your community?
+                </p>
+              </>
+            )}
             <button onClick={() => setShowRequest(true)} style={button('primary')}>
               + Request to add it
             </button>

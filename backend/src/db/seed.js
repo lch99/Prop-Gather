@@ -171,8 +171,14 @@ async function insertRows(tx, table, columns, rows, { ignore = false } = {}) {
 
 export async function seed() {
   const db = getDb()
-  const { n: already } = await db.get('SELECT COUNT(*) AS n FROM projects')
-  if (already > 0) return
+  // "Has the demo data already been loaded?", not "are there any projects?".
+  // Migration 0006 inserts the real-community catalogue, and it runs before this
+  // (both at boot in ../index.js and in the `npm run seed` entrypoint below), so
+  // a projects-count guard would see those rows on a brand new database and skip
+  // the whole seed — no admin account, no vendors, no demo residents. The demo
+  // admin is the row that actually distinguishes a seeded database.
+  const already = await db.get("SELECT id FROM users WHERE id = 'u_admin'")
+  if (already) return
 
   await withTransaction(async (tx) => {
     await insertRows(tx, 'projects',
