@@ -106,11 +106,43 @@ export async function withTransaction(fn) {
 // indistinguishable from a `:name` placeholder to the parser, so leaving it on
 // makes every migration using one fail to even parse.
 export async function migrationConnection() {
-  return mysql.createConnection({
-    ...config(),
-    multipleStatements: true,
-    namedPlaceholders: false
-  })
+  try {
+    return await mysql.createConnection({
+      ...config(),
+      multipleStatements: true,
+      namedPlaceholders: false
+    })
+  } catch (err) {
+    throw explainMissingEnv(err)
+  }
+}
+
+// Every value in config() has a fallback, so a process started with no
+// environment at all connects as root with no password and fails with a bare
+// "Access denied for user 'root'@'localhost'" — which says nothing about the
+// actual cause. On a server the cause is almost always that the environment
+// file was never loaded: systemd supplies it via EnvironmentFile, but a plain
+// `npm run migrate` in a shell does not, and /etc/propgather.env is 0600 so it
+// cannot simply be sourced by any user either.
+//
+// Only rewrite the message when nothing names a database, so a genuine wrong
+// password (where the env *did* load) still reports itself accurately.
+function explainMissingEnv(err) {
+  const configured = process.env.MYSQL_USER || process.env.MYSQL_PASSWORD || process.env.MYSQL_DATABASE
+  const denied = err?.code === 'ER_ACCESS_DENIED_NO_PASSWORD_ERROR' || err?.code === 'ER_ACCESS_DENIED_ERROR'
+  if (configured || !denied) return err
+
+  err.message = [
+    err.message,
+    '',
+    "No MYSQL_* variables are set, so this fell back to user 'root' with no password.",
+    'The environment file was almost certainly not loaded. On the server, run:',
+    '',
+    "  sudo -u propgather env $(grep -v '^#' /etc/propgather.env | xargs) npm run migrate",
+    '',
+    'Locally, copy backend/.env.example to backend/.env first.'
+  ].join('\n')
+  return err
 }
 
 export async function closeDb() {
