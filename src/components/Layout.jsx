@@ -56,7 +56,7 @@ export default function Layout({ children }) {
             </div>
             <div>
               <div style={{ fontWeight: 800, fontSize: 19, lineHeight: 1.1, color: '#fff', letterSpacing: '-0.01em' }}>
-                PropGather<span style={{ color: C.brandLight }}>.com</span>
+                PropGather<span style={{ color: C.brandLight }}>.com.my</span>
               </div>
               <div style={{ fontSize: 12.5, color: C.brandLight, lineHeight: 1.2 }}>Malaysia's Verified Property Community</div>
             </div>
@@ -107,7 +107,7 @@ export default function Layout({ children }) {
         {children}
       </main>
       <footer style={{ textAlign: 'center', padding: '20px 0', color: C.textFaint, fontSize: 12 }}>
-        © {new Date().getFullYear()} PropGather.com
+        © {new Date().getFullYear()} PropGather.com.my
         {' · '}
         <Link to="/contact" style={{ color: C.textFaint, textDecoration: 'underline' }}>Contact Us</Link>
         {' · '}

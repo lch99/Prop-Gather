@@ -65,7 +65,7 @@ export default function ContactPage() {
           as you can so we can help you faster.
         </Channel>
 
-        <a href="mailto:support@propgather.com" style={{ display: 'block', marginTop: 8 }}>
+        <a href="mailto:Supportpropgather@gmail.com" style={{ display: 'block', marginTop: 8 }}>
           <button style={{ ...button('primary'), width: '100%', padding: '13px 18px', fontSize: 15 }}>
             ✉️&nbsp; Email our support team
           </button>
