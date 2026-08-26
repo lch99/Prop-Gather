@@ -7,6 +7,7 @@ import AdminOverviewPage from './AdminOverviewPage'
 import AdminVerificationPage from './AdminVerificationPage'
 import AdminReferencesPage from './AdminReferencesPage'
 import AdminActivityLogPage from './AdminActivityLogPage'
+import AdminCommunityRequestsPage from './AdminCommunityRequestsPage'
 
 export default function AdminPage() {
   const location = useLocation()
@@ -14,6 +15,7 @@ export default function AdminPage() {
   const { user } = useAuth()
   const [queue, setQueue] = useState(null)
   const [projects, setProjects] = useState({})
+  const [requests, setRequests] = useState(null)
 
   // Falling back to [] on failure matters now that this is a network call: the
   // page renders skeletons while `queue` is null, so an error that left it null
@@ -23,18 +25,28 @@ export default function AdminPage() {
     [user?.role]
   )
 
+  // Same [] -on-failure rule as `queue`: the requests tab renders skeletons
+  // while this is null, so a rejected fetch has to land on a concrete value.
+  const reloadRequests = useCallback(
+    () => api.getCommunityRequests(user?.role).then(setRequests).catch(() => setRequests([])),
+    [user?.role]
+  )
+
   useEffect(() => {
     reload()
+    reloadRequests()
     api.getProjects()
       .then(list => setProjects(Object.fromEntries(list.map(p => [p.id, p]))))
       .catch(() => setProjects({}))
-  }, [reload])
+  }, [reload, reloadRequests])
 
   const pendingCount = queue?.filter(a => a.status === 'Pending').length || 0
+  const requestCount = requests?.length || 0
 
   const tabs = [
     { key: 'overview', label: 'Overview', icon: '📊', path: '/admin/overview' },
     { key: 'verification', label: 'Verification Queue', icon: '🛡️', path: '/admin/verification', count: pendingCount },
+    { key: 'requests', label: 'Requested Communities', icon: '📮', path: '/admin/requests', count: requestCount },
     { key: 'references', label: 'Community References', icon: '📂', path: '/admin/references' },
     { key: 'activity', label: 'Activity Log', icon: '📋', path: '/admin/activity' }
   ]
@@ -88,6 +100,7 @@ export default function AdminPage() {
           bearer token, so passing the acting admin from the client would be
           decorative at best and forgeable at worst. */}
       {active === 'verification' && <AdminVerificationPage queue={queue} projects={projects} reload={reload} />}
+      {active === 'requests' && <AdminCommunityRequestsPage requests={requests} reload={reloadRequests} />}
       {active === 'references' && <AdminReferencesPage />}
       {active === 'activity' && <AdminActivityLogPage />}
     </div>

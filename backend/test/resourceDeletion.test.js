@@ -222,7 +222,7 @@ describe('/api/vendors — global directory management', () => {
 
 describe('GET /api/community-requests', () => {
   it('lets an admin read back submitted requests', async () => {
-    await request(app).post('/api/community-requests').send({ name: 'Taman Baru', city: 'Ipoh', state: 'Perak', developer: 'Dev Sdn Bhd', note: 'please add' })
+    await request(app).post('/api/community-requests').send({ contactName: 'Siti', email: 'siti@example.com', name: 'Taman Baru', city: 'Ipoh', state: 'Perak', developer: 'Dev Sdn Bhd', note: 'please add' })
 
     const res = await authed(app, adminToken).get('/api/community-requests')
     expect(res.status).toBe(200)
@@ -243,9 +243,9 @@ describe('GET /api/community-requests', () => {
   })
 
   it('returns newest first', async () => {
-    await request(app).post('/api/community-requests').send({ name: 'First', city: 'A', state: 'B' })
+    await request(app).post('/api/community-requests').send({ contactName: 'Siti', email: 'siti@example.com', name: 'First', city: 'A', state: 'B' })
     await new Promise(r => setTimeout(r, 5))
-    await request(app).post('/api/community-requests').send({ name: 'Second', city: 'A', state: 'B' })
+    await request(app).post('/api/community-requests').send({ contactName: 'Aziz', email: 'aziz@example.com', name: 'Second', city: 'A', state: 'B' })
 
     const res = await authed(app, adminToken).get('/api/community-requests')
     const names = res.body.map(r => r.name)
@@ -253,7 +253,7 @@ describe('GET /api/community-requests', () => {
   })
 
   it('lets an admin delete a handled request', async () => {
-    await request(app).post('/api/community-requests').send({ name: 'Taman Baru', city: 'Ipoh', state: 'Perak' })
+    await request(app).post('/api/community-requests').send({ contactName: 'Siti', email: 'siti@example.com', name: 'Taman Baru', city: 'Ipoh', state: 'Perak' })
     const list = await authed(app, adminToken).get('/api/community-requests')
     const target = list.body.find(r => r.name === 'Taman Baru')
 
@@ -265,7 +265,7 @@ describe('GET /api/community-requests', () => {
   })
 
   it('rejects a non-admin deleting a request', async () => {
-    await request(app).post('/api/community-requests').send({ name: 'Taman Baru', city: 'Ipoh', state: 'Perak' })
+    await request(app).post('/api/community-requests').send({ contactName: 'Siti', email: 'siti@example.com', name: 'Taman Baru', city: 'Ipoh', state: 'Perak' })
     const list = await authed(app, adminToken).get('/api/community-requests')
     const res = await authed(app, residentToken).delete(`/api/community-requests/${list.body[0].id}`)
     expect(res.status).toBe(403)

@@ -238,16 +238,32 @@ export const api = {
 
   // ── Community requests ────────────────────────────────────────────────────
   // Public and unauthenticated — this is how someone asks for a community that
-  // isn't on the platform yet. Admins read them back via GET.
+  // isn't on the platform yet. contactName/email are required by the server:
+  // they are the only way an admin can tell the submitter their community is
+  // live, so a request without them cannot be actioned.
   requestCommunity: (data) =>
     request('/community-requests', {
       method: 'POST',
       body: {
+        contactName: data.contactName,
+        email: data.email,
         name: data.name,
         city: data.city,
         state: data.state,
         developer: data.developer || '',
         note: data.note || ''
       }
-    })
+    }),
+
+  // Admin-only. See createProject for why `role` is checked client-side too.
+  getCommunityRequests: async (role) => {
+    if (role && role !== 'admin') return []
+    return request('/community-requests')
+  },
+
+  // Used once the community has been added (or the request rejected) — the row
+  // holds the submitter's name and email, so clearing it is also how that
+  // personal data stops being retained. Audited server-side.
+  deleteCommunityRequest: (id) =>
+    request(`/community-requests/${id}`, { method: 'DELETE' })
 }
