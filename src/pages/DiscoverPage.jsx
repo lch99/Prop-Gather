@@ -9,7 +9,7 @@ const activityColor = (level) => {
   return { color: C.neutral, bg: C.neutralBg }
 }
 
-const EMPTY_REQ = { name: '', city: '', state: '', developer: '', note: '' }
+const EMPTY_REQ = { contactName: '', email: '', name: '', city: '', state: '', developer: '', note: '' }
 
 function RequestModal({ onClose }) {
   const [form, setForm] = useState(EMPTY_REQ)
@@ -23,6 +23,16 @@ function RequestModal({ onClose }) {
     e.preventDefault()
     if (!form.name.trim() || !form.city.trim() || !form.state.trim()) {
       setError('Please add the community name, city and state so we can find it.')
+      return
+    }
+    if (!form.contactName.trim() || !form.email.trim()) {
+      setError('Please add your name and email so we can tell you when it is ready.')
+      return
+    }
+    // Deliberately loose — the server does the real check. This only catches an
+    // obvious typo before costing the submitter a round trip.
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) {
+      setError('That email address does not look right. Please check it.')
       return
     }
     setError('')
@@ -96,6 +106,28 @@ function RequestModal({ onClose }) {
                   placeholder="Anything else that helps us find this community..."
                   value={form.note} onChange={set('note')} />
               </div>
+
+              <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={labelStyle}>Your name <span style={{ color: C.danger }}>*</span></label>
+                    <input style={fieldStyle} placeholder="e.g. Siti Rahman" value={form.contactName} onChange={set('contactName')} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={labelStyle}>Your email <span style={{ color: C.danger }}>*</span></label>
+                    <input style={fieldStyle} type="email" inputMode="email" autoComplete="email"
+                      placeholder="you@email.com" value={form.email} onChange={set('email')} />
+                  </div>
+                </div>
+                {/* PDPA notice: this is the point of collection, so say what the
+                    address is for and how long it is kept, right where it is typed. */}
+                <p style={{ margin: '8px 0 0', color: C.textMuted, fontSize: 12, lineHeight: 1.5 }}>
+                  We use this only to tell you when your community is added, and delete it once
+                  your request has been handled. See our{' '}
+                  <Link to="/privacy" style={{ color: C.blue }}>Privacy Policy</Link>.
+                </p>
+              </div>
+
               {error && <p style={{ margin: 0, color: C.danger, fontSize: 13 }}>{error}</p>}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
                 <button type="button" onClick={onClose} style={button('outline')}>Cancel</button>

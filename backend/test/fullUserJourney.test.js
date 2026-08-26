@@ -137,7 +137,7 @@ describe('full user journey — register through every gated resource', () => {
     expect(fees.body.myPayments).toEqual([]) // new member — no payment history yet
 
     // ---- community requests (public) ----
-    const communityRequest = await request(app).post('/api/community-requests').send({ name: 'New Place Residences', city: 'Ipoh', state: 'Perak' })
+    const communityRequest = await request(app).post('/api/community-requests').send({ contactName: 'Journey Tester', email: 'journey@example.com', name: 'New Place Residences', city: 'Ipoh', state: 'Perak' })
     expect(communityRequest.status).toBe(201)
 
     // ---- audit trail reflects this whole journey ----
