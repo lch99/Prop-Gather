@@ -40,23 +40,23 @@ export default function ContactPage() {
       <div style={{ ...card, padding: 'clamp(18px, 5vw, 28px)' }}>
         <Channel icon="✉️" title="Email us">
           For general questions, account help, or to report a problem:<br />
-          <a href="mailto:support@propgather.com" style={{ color: C.blue, fontWeight: 700 }}>
-            support@propgather.com
+          <a href="mailto:Supportpropgather@gmail.com" style={{ color: C.blue, fontWeight: 700 }}>
+            Supportpropgather@gmail.com
           </a>
         </Channel>
 
         <Channel icon="🔒" title="Privacy & data requests">
           For anything about your personal data or document removal:<br />
-          <a href="mailto:privacy@propgather.com" style={{ color: C.blue, fontWeight: 700 }}>
-            privacy@propgather.com
+          <a href="mailto:infopropgather@gmail.com" style={{ color: C.blue, fontWeight: 700 }}>
+            infopropgather@gmail.com
           </a>
         </Channel>
 
         <Channel icon="🏢" title="Verification & community access">
           Trouble joining your community or getting verified? Email us with your project
           name and unit/lot number.<br />
-          <a href="mailto:support@propgather.com" style={{ color: C.blue, fontWeight: 700 }}>
-            support@propgather.com
+          <a href="mailto:Supportpropgather@gmail.com" style={{ color: C.blue, fontWeight: 700 }}>
+            Supportpropgather@gmail.com
           </a>
         </Channel>
 
