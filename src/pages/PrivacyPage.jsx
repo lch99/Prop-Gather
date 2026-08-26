@@ -17,7 +17,7 @@ function EnglishContent() {
   return (
     <>
       <Section title="1. Who we are">
-        PropGather.com is a verified property community platform for Malaysian residents.
+        PropGather.com.my is a verified property community platform for Malaysian residents.
         We collect personal information only to verify your connection to a property and to operate your community account.
       </Section>
 
@@ -109,7 +109,7 @@ function EnglishContent() {
         </ul>
         <p style={{ margin: '8px 0 0' }}>
           To exercise any of these rights, contact us at{' '}
-          <a href="mailto:privacy@propgather.com" style={{ color: C.blue }}>privacy@propgather.com</a>.
+          <a href="mailto:infopropgather@gmail.com" style={{ color: C.blue }}>infopropgather@gmail.com</a>.
           We handle these requests manually and will respond within a reasonable time.
         </p>
       </Section>
@@ -117,7 +117,7 @@ function EnglishContent() {
       <Section title="8. Children's data">
         PropGather is intended for adult property owners and residents. We do not knowingly collect
         personal data from anyone under 18. If you believe a minor has submitted data to us, contact{' '}
-        <a href="mailto:privacy@propgather.com" style={{ color: C.blue }}>privacy@propgather.com</a> and
+        <a href="mailto:infopropgather@gmail.com" style={{ color: C.blue }}>infopropgather@gmail.com</a> and
         we'll remove it.
       </Section>
 
@@ -139,7 +139,7 @@ function BahasaContent() {
   return (
     <>
       <Section title="1. Siapa kami">
-        PropGather.com ialah platform komuniti hartanah disahkan untuk penduduk Malaysia.
+        PropGather.com.my ialah platform komuniti hartanah disahkan untuk penduduk Malaysia.
         Kami mengumpul maklumat peribadi hanya untuk mengesahkan hubungan anda dengan sesuatu hartanah dan untuk mengendalikan akaun komuniti anda.
       </Section>
 
@@ -232,7 +232,7 @@ function BahasaContent() {
         </ul>
         <p style={{ margin: '8px 0 0' }}>
           Untuk menggunakan mana-mana hak ini, hubungi kami di{' '}
-          <a href="mailto:privacy@propgather.com" style={{ color: C.blue }}>privacy@propgather.com</a>.
+          <a href="mailto:infopropgather@gmail.com" style={{ color: C.blue }}>infopropgather@gmail.com</a>.
           Kami mengendalikan permintaan ini secara manual dan akan memberi respons dalam tempoh yang munasabah.
         </p>
       </Section>
@@ -241,7 +241,7 @@ function BahasaContent() {
         PropGather ditujukan untuk pemilik dan penduduk hartanah yang berusia dewasa. Kami tidak secara
         sengaja mengumpul data peribadi daripada sesiapa yang berusia bawah 18 tahun. Jika anda percaya
         seorang kanak-kanak telah menghantar data kepada kami, hubungi{' '}
-        <a href="mailto:privacy@propgather.com" style={{ color: C.blue }}>privacy@propgather.com</a> dan
+        <a href="mailto:infopropgather@gmail.com" style={{ color: C.blue }}>infopropgather@gmail.com</a> dan
         kami akan memadamkannya.
       </Section>
 
@@ -271,7 +271,7 @@ export default function PrivacyPage() {
             {lang === 'en' ? 'Privacy Policy' : 'Dasar Privasi'}
           </h1>
           <p style={{ color: C.textMuted, fontSize: 13, marginTop: 4, marginBottom: 0 }}>
-            {lang === 'en' ? 'Last updated: August 2026 · PropGather.com' : 'Terakhir dikemas kini: Ogos 2026 · PropGather.com'}
+            {lang === 'en' ? 'Last updated: August 2026 · PropGather.com.my' : 'Terakhir dikemas kini: Ogos 2026 · PropGather.com.my'}
           </p>
         </div>
         <div role="group" aria-label="Language / Bahasa" style={{ display: 'flex', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, overflow: 'hidden', flexShrink: 0 }}>
@@ -306,7 +306,7 @@ export default function PrivacyPage() {
       </div>
 
       <p style={{ fontSize: 12, color: C.textFaint, marginTop: 20, textAlign: 'center' }}>
-        PropGather.com · {lang === 'en' ? "Malaysia's Verified Property Community" : 'Komuniti Hartanah Disahkan Malaysia'}
+        PropGather.com.my · {lang === 'en' ? "Malaysia's Verified Property Community" : 'Komuniti Hartanah Disahkan Malaysia'}
       </p>
     </div>
   )
