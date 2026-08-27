@@ -6,9 +6,9 @@
   "homepage": "https://lch99.github.io/Prop-Gather",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/postbuild.mjs",
     "preview": "vite preview",
-    "predeploy": "vite build --base=/Prop-Gather/",
+    "predeploy": "vite build --base=/Prop-Gather/ && node scripts/postbuild.mjs",
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {

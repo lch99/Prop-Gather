@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { C } from '../theme'
 import { useAuth } from '../auth'
+import Seo from '../seo'
 import AdminOverviewPage from './AdminOverviewPage'
 import AdminVerificationPage from './AdminVerificationPage'
 import AdminReferencesPage from './AdminReferencesPage'
@@ -56,6 +57,7 @@ export default function AdminPage() {
 
   return (
     <div>
+      <Seo title="Admin console" noindex />
       <div style={{ background: C.headerGradient, color: '#fff' }}>
         <div style={{ maxWidth: 980, margin: '0 auto', padding: '26px 24px 0' }}>
           <h1 style={{ margin: '0 0 4px', fontSize: 26, fontWeight: 800 }}>⚙️ Admin Console</h1>

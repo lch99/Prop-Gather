@@ -128,10 +128,80 @@ here; check `dist/index.html`. Runtime asset references must use
 [Layout.jsx:55](src/components/Layout.jsx#L55) does), never a bare `/brand/...`,
 so they stay correct under both bases.
 
-**`HashRouter`** in [main.jsx:3](src/main.jsx#L3) — URLs look like
-`/Prop-Gather/#/projects/p1`. Pages has no server-side rewrite, so a
-`BrowserRouter` deep link would 404 on refresh. Don't "fix" this without adding
-a `404.html` SPA fallback, or you break every shared link.
+**Clean URLs, not `#/...`.** [main.jsx](src/main.jsx) uses `BrowserRouter`, so a
+community is `/project/p1`. This used to be `HashRouter` — but search engines
+ignore everything after a `#`, which meant only the homepage could ever be
+indexed. See [SEO](#seo) below.
+
+The cost is that the server has to answer every unknown path with `index.html`,
+or a deep link 404s on refresh:
+
+- **nginx** (the live site) — the `try_files` line in [2.8a](#28a-clean-urls--the-spa-fallback).
+  **This is the one thing that has to be changed by hand on the server.**
+- **GitHub Pages** — has no rewrite rule, so `npm run build` writes
+  `dist/404.html` as a copy of `index.html`
+  ([scripts/postbuild.mjs](scripts/postbuild.mjs)). Pages serves that for unknown
+  paths, and because Vite wrote absolute, base-aware asset URLs into it, the app
+  boots from any depth and the router reads the real path.
+
+Links shared before the switch still work: `redirectLegacyHashUrl()`
+([src/legacyHashRedirect.js](src/legacyHashRedirect.js)) rewrites `/#/project/p1`
+to `/project/p1` before the router reads the URL.
+
+### SEO
+
+| Piece | Where | Notes |
+|---|---|---|
+| Per-page title, description, canonical, OG, Twitter | [src/seo.jsx](src/seo.jsx) — one `<Seo>` per page | Set client-side. Google executes JS and sees these; social crawlers do not. |
+| Site-level tags + JSON-LD (Organization, WebSite) | [index.html](index.html), static | The raw-HTML floor every social crawler reads. |
+| Per-page JSON-LD | `jsonLd` prop on `<Seo>` | FAQPage on the landing page, BreadcrumbList on a community. |
+| `robots.txt` | [public/robots.txt](public/robots.txt) | Copied into `dist/` verbatim. |
+| `sitemap.xml` | generated into `dist/` by [scripts/postbuild.mjs](scripts/postbuild.mjs) | Static pages plus one URL per community. |
+
+**Private pages carry `noindex`, they are not `Disallow`ed.** `/admin`,
+`/my-communities`, `/login` and the 404 page set
+`<meta name="robots" content="noindex, follow">`. A page blocked in `robots.txt`
+cannot be fetched, so Google never reads its `noindex` and can still index the
+URL from an inbound link — allowing the crawl is what actually keeps them out.
+
+**The sitemap fetches communities at build time.** `npm run build` calls
+`GET <SITE_URL>/api/projects` so every community lands in `sitemap.xml`. It
+never fails the build: if the API is unreachable it writes the static pages
+only and says so. Tune it with:
+
+| Variable | Default | Use |
+|---|---|---|
+| `SITE_URL` | `https://propgather.com.my` | Canonical origin for every `<loc>`. |
+| `SITEMAP_API_URL` | `<SITE_URL>/api` | When the API is on another hostname. |
+| `SITEMAP_SKIP=1` | — | Offline build; static pages only, no warning. |
+
+Because it reads the **live** API, a build run before deploying picks up the
+communities that are already live — which is what you want. Re-run
+`npm run build` after adding communities so the sitemap catches up.
+
+**After the first deploy with clean URLs**, in
+[Google Search Console](https://search.google.com/search-console):
+
+1. Verify the `propgather.com.my` property (DNS TXT is easiest — you already
+   control the zone).
+2. Submit `https://propgather.com.my/sitemap.xml`.
+3. **URL Inspection → Test live URL** on `/discover` and one `/project/<id>`,
+   then "View tested page → Screenshot". This is the check that matters: it
+   shows whether Googlebot rendered the React app, which is the whole premise of
+   client-side meta tags.
+4. Expect indexing to take days to weeks. The old `#/` URLs were never indexed
+   separately, so there is nothing to redirect and no ranking to lose.
+
+Two things worth doing when there is time, neither of which code can settle:
+
+- **A 1200×630 `public/brand/og-image.png`.** Today `og:image` is the 256×256
+  brand mark, so X and Facebook render a small square card despite
+  `summary_large_image`. Dropping that file in and pointing `DEFAULT_IMAGE`
+  ([src/seo.jsx](src/seo.jsx)), `index.html` and `sharePreview.js` at it fixes
+  all three at once.
+- **Prerendering**, if per-page social cards ever matter beyond `/s/:id`. A
+  shared `/project/p1` link still previews with the site-level card, because
+  the crawler never runs the JS that would set the per-page one.
 
 ### Custom domain (e.g. propgather.com), when you get there
 
@@ -545,6 +615,71 @@ sudo certbot --nginx -d api.propgather.com     # also sets up auto-renewal
 
 Documents upload browser → R2 directly, so they don't pass through nginx; the
 16m limit only needs to cover JSON request bodies.
+
+### 2.8a Clean URLs — the SPA fallback
+
+**Required.** The frontend uses `BrowserRouter`, so `/discover` and
+`/project/p1` are real paths with no file behind them. Without the `try_files`
+line below, nginx answers a refresh or a shared deep link with its own 404 and
+the app never boots.
+
+On the single-origin deployment — one nginx serving the built frontend and
+proxying `/api` to Express, which is how the live site runs:
+
+```nginx
+server {
+    listen 80;
+    server_name propgather.com.my www.propgather.com.my;
+
+    root /var/www/propgather;            # where dist/ was copied
+    index index.html;
+
+    client_max_body_size 16m;
+
+    # Hashed assets are immutable; index.html must never be cached, or a
+    # deploy leaves browsers loading a bundle that no longer exists.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    # robots.txt and sitemap.xml are real files in dist/ — try_files serves
+    # them before the fallback, so nothing extra is needed for them.
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # The SPA fallback. Keep it LAST — nginx picks the first matching prefix
+    # location, so any block that must win (/api/, /s/) goes above it.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+`sudo nginx -t && sudo systemctl reload nginx`, then confirm a deep link is
+served by the app rather than by nginx's 404:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://propgather.com.my/discover
+# 200 — a 404 here means try_files is missing
+
+curl -s https://propgather.com.my/sitemap.xml | head -3
+curl -s https://propgather.com.my/robots.txt
+```
+
+Then open `https://propgather.com.my/project/<some-id>` and **reload on that
+URL**. That reload is the whole test.
 
 ### 2.9 Document retention (PDPA — not optional)
 

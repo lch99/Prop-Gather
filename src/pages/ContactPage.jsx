@@ -1,4 +1,5 @@
 import { C, card, button } from '../theme'
+import Seo from '../seo'
 
 const Channel = ({ icon, title, children }) => (
   <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 24 }}>
@@ -17,6 +18,17 @@ const Channel = ({ icon, title, children }) => (
 export default function ContactPage() {
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: 'clamp(20px, 5vw, 40px) clamp(16px, 5vw, 28px)' }}>
+      <Seo
+        path="/contact"
+        title="Contact us"
+        description="Questions about your account, verification, or your personal data? Email PropGather support — we aim to reply within 2 business days."
+        jsonLd={{
+          '@context': 'https://schema.org',
+          '@type': 'ContactPage',
+          name: 'Contact PropGather',
+          description: 'Support, verification help, and privacy or data requests for PropGather.com.my.'
+        }}
+      />
 
       {/* Page header */}
       <div style={{ marginBottom: 24 }}>

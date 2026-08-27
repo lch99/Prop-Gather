@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-MY">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/favicon.png" />
@@ -7,6 +7,101 @@
     <meta name="theme-color" content="#4081C6" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PropGather.com.my — Malaysia's Verified Property Community</title>
+    <meta name="description" content="PropGather is Malaysia's verified property community platform. Find your condo or landed project, verify your ownership, and get a private residents-only forum, chat, defect tracking, documents and community polls." />
+
+    <!--
+      Link previews. WhatsApp, Facebook and Telegram build their card by fetching
+      the URL and reading the raw HTML — they do NOT run JavaScript — so a shared
+      link previews from this file, not from what React renders afterwards.
+
+      src/seo.jsx overwrites all of these at runtime with per-page values (which
+      is what Google sees, since it does execute JS). These static ones are the
+      floor underneath that: the site-level card every shared link falls back to.
+      Keep the values here in step with DEFAULT_TITLE / DEFAULT_DESCRIPTION /
+      DEFAULT_IMAGE in src/seo.jsx.
+
+      The one place a per-community card is possible without prerendering is
+      /s/:id, the short link the share sheet hands out — the backend answers that
+      URL with the community's own tags (backend/src/routes/sharePreview.js).
+      See "Share links" in DEPLOYMENT.md for the nginx line that routes it there.
+
+      og:image is the 256x256 brand mark, so X falls back to a small card despite
+      summary_large_image. A 1200x630 public/brand/og-image.png fixes that in
+      three places at once: here, src/seo.jsx, and sharePreview.js.
+    -->
+    <link rel="canonical" href="https://propgather.com.my/" />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:site_name" content="PropGather.com.my" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="PropGather.com.my — Malaysia's Verified Property Community" />
+    <meta property="og:description" content="A private, verified space for the residents of your Malaysian condo or housing project — forum, chat, polls, defect tracking, documents, and fees. Free to browse; join your own community once verified." />
+    <meta property="og:url" content="https://propgather.com.my/" />
+    <meta property="og:image" content="https://propgather.com.my/brand/propgather-icon.png" />
+    <meta property="og:locale" content="en_MY" />
+    <meta property="og:locale:alternate" content="ms_MY" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="PropGather.com.my — Malaysia's Verified Property Community" />
+    <meta name="twitter:description" content="A private, verified space for the residents of your Malaysian condo or housing project — forum, chat, polls, defect tracking, documents, and fees. Free to browse; join your own community once verified." />
+    <meta name="twitter:image" content="https://propgather.com.my/brand/propgather-icon.png" />
+    <!--
+      Site-level structured data: who runs this and what the site is. Static and
+      absolute for the same reason as the tags above — and because Google reads
+      it to build the knowledge panel and sitelinks.
+
+      src/seo.jsx layers page-level JSON-LD on top of this under
+      data-pg-seo="jsonld-page" (FAQPage on the landing page, BreadcrumbList on a
+      community). Both can coexist; they describe different things.
+
+      The SearchAction target is a real, working URL — DiscoverPage reads `q`
+      from the query string. Do not point it at a URL that does not filter.
+    -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://propgather.com.my/#organization",
+            "name": "PropGather",
+            "alternateName": "PropGather.com.my",
+            "url": "https://propgather.com.my/",
+            "logo": "https://propgather.com.my/brand/propgather-icon.png",
+            "description": "A verified, residents-only community platform for Malaysian condominium and housing projects.",
+            "areaServed": { "@type": "Country", "name": "Malaysia" },
+            "contactPoint": [
+              {
+                "@type": "ContactPoint",
+                "contactType": "customer support",
+                "email": "Supportpropgather@gmail.com",
+                "availableLanguage": ["English", "Malay"]
+              },
+              {
+                "@type": "ContactPoint",
+                "contactType": "privacy",
+                "email": "infopropgather@gmail.com",
+                "availableLanguage": ["English", "Malay"]
+              }
+            ]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://propgather.com.my/#website",
+            "url": "https://propgather.com.my/",
+            "name": "PropGather.com.my",
+            "publisher": { "@id": "https://propgather.com.my/#organization" },
+            "inLanguage": "en-MY",
+            "potentialAction": {
+              "@type": "SearchAction",
+              "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://propgather.com.my/discover?q={search_term_string}"
+              },
+              "query-input": "required name=search_term_string"
+            }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

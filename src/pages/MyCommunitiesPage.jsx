@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { C, card, badge, button } from '../theme'
 import { TierBadge } from '../components/Badges'
+import Seo from '../seo'
 
 export default function MyCommunitiesPage() {
   const [me, setMe] = useState(null)
@@ -23,6 +24,7 @@ export default function MyCommunitiesPage() {
 
   return (
     <div>
+      <Seo path="/my-communities" title="My communities" noindex />
       <div className="pg-hero-anim" style={{ background: C.headerGradientWide, color: '#fff', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', inset: 0, background: C.heroGlow, pointerEvents: 'none' }} />
         <div style={{ maxWidth: 1000, margin: '0 auto', padding: 'clamp(28px, 6.5vw, 34px) clamp(18px, 5vw, 24px) clamp(26px, 6vw, 30px)', position: 'relative', zIndex: 1 }}>

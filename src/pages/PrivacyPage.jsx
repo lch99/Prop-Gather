@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { C, card } from '../theme'
+import Seo from '../seo'
 
 const Section = ({ title, children }) => (
   <div style={{ marginBottom: 28 }}>
@@ -265,6 +266,11 @@ export default function PrivacyPage() {
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '32px 24px' }}>
+      <Seo
+        path="/privacy"
+        title="Privacy policy"
+        description="How PropGather collects, uses, and deletes your personal data under Malaysia's Personal Data Protection Act 2010 — including the 14-day deletion of ownership-proof documents."
+      />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ color: C.navy, fontSize: 28, margin: 0 }}>

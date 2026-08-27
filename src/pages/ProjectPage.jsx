@@ -3,6 +3,7 @@ import { Routes, Route, NavLink, useParams, Navigate, Link } from 'react-router-
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { C, card, badge, button } from '../theme'
+import Seo, { SITE_URL } from '../seo'
 import ForumTab from './project/ForumTab'
 import ChatTab from './project/ChatTab'
 import ToolsTab from './project/ToolsTab'
@@ -131,8 +132,31 @@ export default function ProjectPage() {
     background: 'rgba(239,68,68,0.22)', border: '1px solid rgba(239,68,68,0.45)'
   }
 
+  // Community pages are the long tail worth ranking for — someone googling
+  // their building by name. The page is public even when signed out
+  // (LockedGate names the project), so a crawler has real content to index.
+  const seoDescription =
+    `Connect with verified owners and residents of ${project.name} in ${project.city}, ${project.state}. ` +
+    'Private forum, live chat, polls, defect reports, and shared documents — residents only, no management, no strangers.'
+
   return (
     <div>
+      {/* All four tabs canonicalise to the bare project URL: the tab content
+          is members-only, so to a crawler they are the same page. */}
+      <Seo
+        path={`/project/${id}`}
+        title={`${project.name} residents community`}
+        description={seoDescription}
+        jsonLd={{
+          '@context': 'https://schema.org',
+          '@type': 'BreadcrumbList',
+          itemListElement: [
+            { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE_URL}/` },
+            { '@type': 'ListItem', position: 2, name: 'Discover', item: `${SITE_URL}/discover` },
+            { '@type': 'ListItem', position: 3, name: project.name, item: `${SITE_URL}/project/${id}` }
+          ]
+        }}
+      />
       <div className="pg-hero-anim" style={{ background: C.headerGradientWide, color: '#fff', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', inset: 0, background: C.heroGlow, pointerEvents: 'none' }} />
         <div style={{
