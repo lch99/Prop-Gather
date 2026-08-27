@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route, NavLink, useParams, Navigate, Link } from 'react-router-dom'
+import { Routes, Route, NavLink, useParams, useSearchParams, Navigate, Link } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { C, card, badge, button } from '../theme'
+import Seo, { SITE_URL } from '../seo'
 import ForumTab from './project/ForumTab'
 import ChatTab from './project/ChatTab'
 import ToolsTab from './project/ToolsTab'
 import ReferencesTab from './project/ReferencesTab'
+import ShareButton from '../components/Share'
 
 const comingSoonTabs = ['Subscription*', 'Vendors']
 
@@ -45,7 +47,8 @@ function ComingSoonModal({ tab, onClose }) {
   )
 }
 
-function LockedGate({ projectId, projectName, isLoggedIn }) {
+function LockedGate({ project, isLoggedIn }) {
+  const projectId = project.id
   return (
     <div style={{
       ...card, maxWidth: 520, margin: '40px auto',
@@ -57,7 +60,7 @@ function LockedGate({ projectId, projectName, isLoggedIn }) {
         Verified residents only
       </h2>
       <p style={{ margin: '0 0 10px', color: C.textMuted, fontSize: 15, lineHeight: 1.65 }}>
-        The community forum and chat for <strong style={{ color: C.navy }}>{projectName}</strong> are
+        The community forum and chat for <strong style={{ color: C.navy }}>{project.name}</strong> are
         only accessible to verified property owners and residents of this building.
       </p>
       <p style={{ margin: '0 0 28px', color: C.textMuted, fontSize: 14, lineHeight: 1.55 }}>
@@ -85,6 +88,16 @@ function LockedGate({ projectId, projectName, isLoggedIn }) {
           </button>
         </Link>
       </div>
+
+      {/* This gate is where someone who followed a shared link and isn't a
+          resident here ends up. Passing it on to a neighbour who *is* one is the
+          most useful thing they can do from this screen. */}
+      <div style={{ marginTop: 22, paddingTop: 18, borderTop: `1px solid ${C.border}` }}>
+        <p style={{ margin: '0 0 12px', color: C.textMuted, fontSize: 14 }}>
+          Know someone who lives here? Send them this community.
+        </p>
+        <ShareButton project={project} variant="secondary" label={`Share ${project.name}`} style={{ fontSize: 14, padding: '10px 20px' }} />
+      </div>
     </div>
   )
 }
@@ -95,11 +108,25 @@ export default function ProjectPage() {
   const [project, setProject] = useState(null)
   const [popupTab, setPopupTab] = useState(null)
   const [myComms, setMyComms] = useState(null)
+  const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => {
     setProject(null)
     api.getProject(id).then(setProject).catch(() => setProject(false))
   }, [id])
+
+  // ?from=share means this page was opened from a link the share sheet handed
+  // out — the arrival half of the counter pair behind GET /projects/share-stats.
+  // Counted here rather than on the /s/:id preview the backend serves, because
+  // that URL is fetched by WhatsApp's and Facebook's crawlers to build the card.
+  // The marker is stripped afterwards so a refresh doesn't count twice.
+  useEffect(() => {
+    if (searchParams.get('from') !== 'share') return
+    api.recordShareVisit(id).catch(() => {})
+    const next = new URLSearchParams(searchParams)
+    next.delete('from')
+    setSearchParams(next, { replace: true })
+  }, [id, searchParams, setSearchParams])
 
   useEffect(() => {
     if (!user) { setMyComms([]); return }
@@ -119,7 +146,7 @@ export default function ProjectPage() {
       ? <div style={{ padding: 40, textAlign: 'center', color: C.textMuted }}>Loading...</div>
       : isVerified
         ? tab
-        : <LockedGate projectId={id} projectName={project.name} isLoggedIn={!!user} />
+        : <LockedGate project={project} isLoggedIn={!!user} />
 
   const glassBadge = {
     display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 700,
@@ -131,8 +158,31 @@ export default function ProjectPage() {
     background: 'rgba(239,68,68,0.22)', border: '1px solid rgba(239,68,68,0.45)'
   }
 
+  // Community pages are the long tail worth ranking for — someone googling
+  // their building by name. The page is public even when signed out
+  // (LockedGate names the project), so a crawler has real content to index.
+  const seoDescription =
+    `Connect with verified owners and residents of ${project.name} in ${project.city}, ${project.state}. ` +
+    'Private forum, live chat, polls, defect reports, and shared documents — residents only, no management, no strangers.'
+
   return (
     <div>
+      {/* All four tabs canonicalise to the bare project URL: the tab content
+          is members-only, so to a crawler they are the same page. */}
+      <Seo
+        path={`/project/${id}`}
+        title={`${project.name} residents community`}
+        description={seoDescription}
+        jsonLd={{
+          '@context': 'https://schema.org',
+          '@type': 'BreadcrumbList',
+          itemListElement: [
+            { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE_URL}/` },
+            { '@type': 'ListItem', position: 2, name: 'Discover', item: `${SITE_URL}/discover` },
+            { '@type': 'ListItem', position: 3, name: project.name, item: `${SITE_URL}/project/${id}` }
+          ]
+        }}
+      />
       <div className="pg-hero-anim" style={{ background: C.headerGradientWide, color: '#fff', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', inset: 0, background: C.heroGlow, pointerEvents: 'none' }} />
         <div style={{
@@ -150,6 +200,7 @@ export default function ProjectPage() {
               ? <span style={glassBadge}>✓ Your access: verified</span>
               : <span style={lockedBadge}>🔐 {user ? 'Not yet verified' : 'Login to access'}</span>
             }
+            <ShareButton project={project} variant="hero" />
           </div>
         </div>
       </div>

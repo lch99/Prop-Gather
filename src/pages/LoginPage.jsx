@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { C, card, button } from '../theme'
+import Seo from '../seo'
 import { useAuth, DEMO_ACCOUNTS, SHOW_DEMO_LOGINS } from '../auth'
 
 export default function LoginPage() {
@@ -58,6 +59,7 @@ export default function LoginPage() {
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '40px 24px 48px' }}>
+      <Seo path="/login" title="Log in" noindex />
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
         <div style={{ fontSize: 44, lineHeight: 1, marginBottom: 8 }} aria-hidden="true">🏡</div>
         <h1 style={{ color: C.navy, margin: '0 0 6px', fontSize: 30, letterSpacing: '-0.01em' }}>

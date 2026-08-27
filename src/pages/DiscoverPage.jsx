@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { C, card, badge, button, chipColor } from '../theme'
+import Seo from '../seo'
+import ShareButton from '../components/Share'
 
 const activityColor = (level) => {
   if (level === 'High') return { color: C.success, bg: C.successBg }
@@ -216,7 +218,10 @@ function CommunityJoinModal({ project, onClose }) {
           </div>
 
           {/* Actions */}
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4, flexWrap: 'wrap' }}>
+            {/* Not everyone who opens this lives here — for them, passing it to a
+                neighbour who does is the useful action. */}
+            <ShareButton project={project} variant="outline" style={{ marginRight: 'auto' }} />
             <Link to={`/project/${project.id}`} onClick={onClose} style={{ textDecoration: 'none' }}>
               <button style={button('outline')}>View community</button>
             </Link>
@@ -269,9 +274,20 @@ function SkeletonCard() {
 export default function DiscoverPage() {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [state, setState] = useState('')
-  const [type, setType] = useState('')
+  // The three filters live in the URL rather than in component state, so a
+  // filtered view of the directory can be shared or bookmarked — and so the
+  // SearchAction in index.html's JSON-LD points at a URL that really does
+  // search. `replace` keeps every keystroke in the search box out of history.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const search = searchParams.get('q') || ''
+  const state = searchParams.get('state') || ''
+  const type = searchParams.get('type') || ''
+  const setFilter = (key) => (e) => setSearchParams(prev => {
+    const next = new URLSearchParams(prev)
+    if (e.target.value) next.set(key, e.target.value)
+    else next.delete(key)
+    return next
+  }, { replace: true })
   const [showRequest, setShowRequest] = useState(false)
   const [selectedProject, setSelectedProject] = useState(null)
 
@@ -311,6 +327,14 @@ export default function DiscoverPage() {
 
   return (
     <div>
+      {/* Canonical is the bare path. The filters live in the query string now,
+          so every combination of them would otherwise look to a crawler like a
+          separate page with near-identical content. */}
+      <Seo
+        path="/discover"
+        title="Discover verified property communities in Malaysia"
+        description="Search Malaysia's directory of condominiums, apartments, and housing projects. Find your building by name, city, or state and join its verified residents-only community."
+      />
       {showRequest && <RequestModal onClose={() => setShowRequest(false)} />}
       {selectedProject && <CommunityJoinModal project={selectedProject} onClose={() => setSelectedProject(null)} />}
       <div className="pg-hero-anim" style={{ background: C.headerGradientWide, color: '#fff', position: 'relative', overflow: 'hidden' }}>
@@ -380,22 +404,22 @@ export default function DiscoverPage() {
             <input
               placeholder="Search by project name, city, or state..."
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={setFilter('q')}
               style={inputStyle}
             />
             <div className="pg-discover-search-filters">
-              <select value={state} onChange={e => setState(e.target.value)} style={selectStyle}>
+              <select value={state} onChange={setFilter('state')} style={selectStyle}>
                 <option value="">All states</option>
                 {states.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
-              <select value={type} onChange={e => setType(e.target.value)} style={selectStyle}>
+              <select value={type} onChange={setFilter('type')} style={selectStyle}>
                 <option value="">All types</option>
                 {types.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             {(search || state || type) && (
               <button
-                onClick={() => { setSearch(''); setState(''); setType('') }}
+                onClick={() => setSearchParams({}, { replace: true })}
                 style={{ border: 'none', background: 'none', color: C.blue, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
               >
                 × Clear filters
@@ -497,7 +521,16 @@ export default function DiscoverPage() {
                         color: C.blue, fontWeight: 700, fontSize: 14
                       }}>
                         View community &amp; join
-                        <span className="pg-arrow">→</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          {/* ShareButton swallows the click, so this never opens
+                              the community by accident. */}
+                          <ShareButton
+                            project={p}
+                            variant="icon"
+                            style={{ width: 30, height: 30, fontSize: 14 }}
+                          />
+                          <span className="pg-arrow">→</span>
+                        </span>
                       </div>
                     </div>
                   </div>

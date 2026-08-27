@@ -1,0 +1,16 @@
+# https://propgather.com.my/robots.txt
+
+User-agent: *
+Allow: /
+
+# The API is same-origin behind nginx. It returns JSON, never pages worth
+# indexing, and crawling it is pure load on the backend.
+Disallow: /api/
+
+# Private and duplicate-ish pages (/admin, /my-communities, /login, the tabs
+# inside a community) are deliberately NOT listed here. They carry a
+# `noindex` meta tag instead — see src/seo.jsx. A page blocked in robots.txt
+# cannot be fetched, so Google never reads its noindex and can still index the
+# URL from inbound links. Allowing the crawl is what actually keeps them out.
+
+Sitemap: https://propgather.com.my/sitemap.xml

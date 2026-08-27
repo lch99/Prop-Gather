@@ -47,6 +47,30 @@ export const api = {
 
   getProject: (id) => request(`/projects/${id}`),
 
+  // ── Sharing ───────────────────────────────────────────────────────────────
+  // All three are anonymous — a share is aimed at someone with no account, and
+  // the counters store no identity (see the 0009 migration). `channel` must be
+  // one the server knows (whatsapp, telegram, facebook, x, email, copy, native);
+  // anything else is a 400.
+  //
+  // Callers treat these as fire-and-forget: components/Share.jsx doesn't await
+  // them, because a failed count must never cost the share itself.
+  recordShare: (projectId, channel) =>
+    request(`/projects/${projectId}/share`, { method: 'POST', body: { channel } }),
+
+  // The other half of the loop: someone opened a shared link and arrived.
+  // Recorded from the app rather than the /s/:id preview page, which is what
+  // WhatsApp and Facebook fetch to build their card — counting those would
+  // report crawlers as visitors.
+  recordShareVisit: (projectId) =>
+    request(`/projects/${projectId}/share-visit`, { method: 'POST', body: {} }),
+
+  // Admin-only. See createProject for why `role` is checked client-side too.
+  getShareStats: async (role) => {
+    if (role && role !== 'admin') return []
+    return request('/projects/share-stats')
+  },
+
   // Admin-only. The `role` guard is a UX short-circuit so a non-admin gets the
   // same message without a round trip — the server's requireRole('admin') is
   // the actual boundary.

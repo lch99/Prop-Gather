@@ -224,6 +224,7 @@ export default function AdminOverviewPage() {
   const [projects, setProjects] = useState(null)
   const [queue, setQueue] = useState([])
   const [refsByProject, setRefsByProject] = useState({})
+  const [shareStats, setShareStats] = useState([])
   const [search, setSearch] = useState('')
   const [adding, setAdding] = useState(false)
   const [justAdded, setJustAdded] = useState(null)
@@ -244,8 +245,17 @@ export default function AdminOverviewPage() {
       if (alive) setRefsByProject(Object.fromEntries(entries))
     }).catch(() => { if (alive) setProjects([]) })
     api.getVerificationQueue(user?.role).then(q => { if (alive) setQueue(q) }).catch(() => {})
+    // How far each community has travelled: shares sent, and links actually
+    // opened. Failure is swallowed and leaves the counts at zero — this is
+    // reporting alongside the page's real job, not a reason to blank it.
+    api.getShareStats(user?.role).then(stats => { if (alive) setShareStats(stats) }).catch(() => {})
     return () => { alive = false }
   }, [user?.role])
+
+  const sharesByProject = useMemo(
+    () => Object.fromEntries(shareStats.map(s => [s.projectId, s])),
+    [shareStats]
+  )
 
   const pendingByProject = useMemo(() => {
     const m = {}
@@ -259,8 +269,10 @@ export default function AdminOverviewPage() {
     const pending = queue.filter(a => a.status === 'Pending').length
     const progressUpdates = Object.values(refsByProject)
       .reduce((s, refs) => s + refs.filter(r => r.type === PROGRESS_TYPE).length, 0)
-    return { communities, residents, pending, progressUpdates }
-  }, [projects, queue, refsByProject])
+    const shares = shareStats.reduce((sum, s) => sum + s.shares, 0)
+    const shareVisits = shareStats.reduce((sum, s) => sum + s.visits, 0)
+    return { communities, residents, pending, progressUpdates, shares, shareVisits }
+  }, [projects, queue, refsByProject, shareStats])
 
   const rows = useMemo(() => {
     if (!projects) return []
@@ -270,11 +282,17 @@ export default function AdminOverviewPage() {
       .map(p => {
         const refs = refsByProject[p.id] || []
         const progress = refs.filter(r => r.type === PROGRESS_TYPE)
-        return { project: p, refCount: refs.length, latestProgress: progress[0] || null, pending: pendingByProject[p.id] || 0 }
+        return {
+          project: p,
+          refCount: refs.length,
+          latestProgress: progress[0] || null,
+          pending: pendingByProject[p.id] || 0,
+          share: sharesByProject[p.id] || null
+        }
       })
       // communities waiting on a decision surface first; alphabetical after that
       .sort((a, b) => b.pending - a.pending || a.project.name.localeCompare(b.project.name))
-  }, [projects, refsByProject, pendingByProject, search])
+  }, [projects, refsByProject, pendingByProject, sharesByProject, search])
 
   // Quick-pick types for the add form, same derive-from-data approach the
   // Discover filters use, so a type an admin invents once is offered next time.
@@ -334,6 +352,8 @@ export default function AdminOverviewPage() {
         <StatTile icon="👥" value={totals.residents.toLocaleString()} label="Verified residents" />
         <StatTile icon="⏳" value={totals.pending} label="Pending applications" onClick={() => navigate('/admin/verification')} />
         <StatTile icon="🏗️" value={totals.progressUpdates} label="Progress updates published" />
+        <StatTile icon="📣" value={totals.shares.toLocaleString()} label="Community shares sent" />
+        <StatTile icon="🔗" value={totals.shareVisits.toLocaleString()} label="Visits from a shared link" />
       </div>
 
       <input
@@ -357,7 +377,7 @@ export default function AdminOverviewPage() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-          {rows.map(({ project: p, refCount, latestProgress, pending }, i) => {
+          {rows.map(({ project: p, refCount, latestProgress, pending, share }, i) => {
             const ac = activityColor(p.activityLevel)
             const [ctext, cbg] = chipColor(p.type)
             const cover = coverImage(latestProgress)
@@ -391,6 +411,17 @@ export default function AdminOverviewPage() {
                     <span style={badge(C.navy, C.neutralBg)}>👥 {p.ownerCount}</span>
                     <span style={badge(ac.color, ac.bg)}>{p.activityLevel} activity</span>
                     <span style={badge(C.textMuted, C.neutralBg)}>📂 {refCount} reference{refCount !== 1 ? 's' : ''}</span>
+                    {/* Only shown once a community has actually been shared — a
+                        row of "0 shares" badges says nothing and crowds out the
+                        badges that do. */}
+                    {share && share.shares > 0 && (
+                      <span
+                        style={badge(C.blue, C.blueLight)}
+                        title={`${share.visits} visit${share.visits === 1 ? '' : 's'} from a shared link · last shared ${share.lastSharedAt}`}
+                      >
+                        📣 {share.shares} share{share.shares !== 1 ? 's' : ''} → {share.visits} open{share.visits !== 1 ? 's' : ''}
+                      </span>
+                    )}
                     {pending > 0 && (
                       <span
                         role="button"

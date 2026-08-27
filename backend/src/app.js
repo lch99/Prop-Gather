@@ -16,6 +16,7 @@ import { defectsRouter } from './routes/defects.js'
 import { documentsRouter } from './routes/documents.js'
 import { referencesRouter } from './routes/references.js'
 import { feesRouter } from './routes/fees.js'
+import { sharePreviewRouter } from './routes/sharePreview.js'
 
 export function createApp() {
   const app = express()
@@ -26,6 +27,11 @@ export function createApp() {
   app.use(optionalAuth)
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }))
+
+  // Deliberately not under /api: this is the URL residents paste into WhatsApp,
+  // and it answers with HTML (Open Graph tags for the preview card, then a
+  // redirect into the app) rather than JSON. See routes/sharePreview.js.
+  app.use('/s', sharePreviewRouter)
 
   app.use('/api/auth', authRouter)
   app.use('/api/projects', projectsRouter)

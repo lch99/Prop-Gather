@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { C, card, button, badge } from '../theme'
+import Seo from '../seo'
 import { useAttachments, AttachmentPicker, AttachmentList } from '../components/Attachments'
 
 const steps = ['Register', 'Upload proof', 'Admin review', 'Access granted']
@@ -175,6 +176,11 @@ export default function RegisterPage() {
   if (!tncAccepted) {
     return (
       <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 24px' }}>
+        <Seo
+          path="/register"
+          title="Join your verified community"
+          description="Verify your ownership with your Sale and Purchase Agreement, a recent utility bill, or your property title. An admin reviews it within 24 hours, then your building's private community opens up."
+        />
         <h1 style={{ color: C.navy, marginBottom: 6, fontSize: 28 }}>Before you continue</h1>
         <p style={{ color: C.textMuted, marginTop: 0, marginBottom: 16, fontSize: 15 }}>
           Please read and accept our Terms & Conditions before starting your community verification.
@@ -224,6 +230,11 @@ export default function RegisterPage() {
 
   return (
     <div style={{ maxWidth: 980, margin: '0 auto', padding: '24px 24px' }}>
+      <Seo
+        path="/register"
+        title="Join your verified community"
+        description="Verify your ownership with your Sale and Purchase Agreement, a recent utility bill, or your property title. An admin reviews it within 24 hours, then your building's private community opens up."
+      />
       <h1 style={{ color: C.navy, marginBottom: 6, fontSize: 28 }}>Join your verified community</h1>
       <p style={{ color: C.textMuted, marginTop: 0, marginBottom: 16, fontSize: 15 }}>
         Every resident must prove their connection to the property before accessing the community —

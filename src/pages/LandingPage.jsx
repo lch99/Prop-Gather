@@ -2,6 +2,7 @@
 import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { C, card, button, badge, chipColor } from '../theme'
+import Seo from '../seo'
 
 // Resident-facing features. Each entry borrows a cheerful chip hue for its icon tile,
 // while card text stays dark on white for older-eye legibility (WCAG AA).
@@ -56,6 +57,18 @@ const FAQS = [
   { q: 'Is this a residents-only space?', a: "Yes. Only verified residents and owners can read and post here. Building management, JMB committees, and developers have no access — so you and your neighbours can speak openly." }
 ]
 
+// Built from the same FAQS the page renders, so the structured data cannot
+// drift from what a visitor actually reads — which is the thing Google checks.
+const FAQ_JSONLD = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: FAQS.map(({ q, a }) => ({
+    '@type': 'Question',
+    name: q,
+    acceptedAnswer: { '@type': 'Answer', text: a }
+  }))
+}
+
 export default function LandingPage() {
   const [projects, setProjects] = useState([])
 
@@ -75,6 +88,10 @@ export default function LandingPage() {
 
   return (
     <div>
+      {/* No title prop: the homepage keeps the site-level title verbatim rather
+          than having " · PropGather.com.my" appended to it twice. */}
+      <Seo path="/" jsonLd={FAQ_JSONLD} />
+
       {/* ───────────────── Hero ───────────────── */}
       <div className="pg-hero-anim" style={{ background: C.headerGradientWide, color: '#fff', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', inset: 0, background: C.heroGlow, pointerEvents: 'none' }} />
