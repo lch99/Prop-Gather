@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from '../api'
 import { C, card, button } from '../theme'
 
@@ -273,7 +274,17 @@ export default function ShareButton({ project, variant = 'outline', label = 'Sha
       >
         {variant === 'icon' ? <span aria-hidden="true">🔗</span> : <>📣 {label}</>}
       </button>
-      {open && <ShareSheet project={project} onClose={() => setOpen(false)} />}
+      {/* Portalled to <body>, not rendered in place. Both cards that host this
+          button carry `pg-card-hover`, which applies a transform on hover, and
+          `pg-fade-in` animates one too. A transformed ancestor becomes the
+          containing block for `position: fixed` descendants, so an inline sheet
+          is positioned against the card instead of the viewport and clipped by
+          its `overflow: hidden` — and because the transform comes and goes with
+          hover, it flips between the two on every pointer move. */}
+      {open && createPortal(
+        <ShareSheet project={project} onClose={() => setOpen(false)} />,
+        document.body
+      )}
     </>
   )
 }
