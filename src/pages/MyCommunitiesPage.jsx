@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { C, card, badge, button } from '../theme'
 import { TierBadge } from '../components/Badges'
+import ShareButton from '../components/Share'
 import Seo from '../seo'
 
 export default function MyCommunitiesPage() {
@@ -73,9 +74,21 @@ export default function MyCommunitiesPage() {
                 <span style={badge(C.warning, C.warningBg)}>⚠️ 1 active petition needs attention</span>
               </div>
             </div>
-            <Link to={`/project/${c.projectId}`}>
-              <button style={button('primary')}>Open community →</button>
-            </Link>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Verified residents are the people who can actually vouch for a
+                  community, so this is the highest-value place to offer a share.
+                  /auth/me returns the membership's project without its id — see
+                  userWithCommunities in backend/src/routes/auth.js — so it is
+                  put back here for the share link. */}
+              <ShareButton
+                project={{ id: c.projectId, ...c.project }}
+                variant="outline"
+                label="Invite neighbours"
+              />
+              <Link to={`/project/${c.projectId}`}>
+                <button style={button('primary')}>Open community →</button>
+              </Link>
+            </div>
           </div>
         ))}
       </div>

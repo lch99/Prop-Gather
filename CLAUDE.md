@@ -90,6 +90,11 @@ Two rules the wiring depends on:
   "SEO" and 2.8a in `DEPLOYMENT.md`. Because tags are set client-side, only
   Google (which runs JS) sees per-page values; social crawlers read the static
   ones in `index.html`.
+- **Sharing**: `ShareButton` (`src/components/Share.jsx`) is the only share UI —
+  it owns the message wording, the channel list (WhatsApp first: this is
+  Malaysia), and the `/s/:id` short link, and it reports every share and arrival
+  to the backend counters. Add a `variant` there rather than hand-rolling a
+  share link somewhere else, or the counts stop meaning anything.
 - **File attachments**: use the shared `useAttachments` / `AttachmentPicker` /
   `AttachmentList` from `src/components/Attachments.jsx` (used by forum,
   chat, defect reports, and registration) rather than building a new

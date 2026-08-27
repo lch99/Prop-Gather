@@ -347,6 +347,40 @@ input:focus, textarea:focus, select:focus {
   .pg-nav-short { display: none; }
 }
 
+/* Share sheet (components/Share.jsx) — a bottom sheet on phones, where a thumb
+   reaches the bottom of the screen far more easily than the middle, and a
+   centred dialog once there is room for one. */
+.pg-share-backdrop {
+  align-items: flex-end;
+}
+
+.pg-share-sheet {
+  width: 100%;
+  border-radius: 20px 20px 0 0;
+}
+
+.pg-share-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (min-width: 480px) {
+  .pg-share-backdrop {
+    align-items: center;
+    padding: 16px;
+  }
+
+  .pg-share-sheet {
+    max-width: 430px;
+    border-radius: 18px;
+  }
+
+  .pg-share-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 /* respect users who prefer reduced motion — keeps the design accessible */
 @media (prefers-reduced-motion: reduce) {
   .pg-float, .pg-hero-anim, .pg-gradient-text, .pg-shine::after, .pg-pop, .pg-fade-in, .pg-skel {

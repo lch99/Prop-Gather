@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { C, card, badge, button, chipColor } from '../theme'
 import Seo from '../seo'
+import ShareButton from '../components/Share'
 
 const activityColor = (level) => {
   if (level === 'High') return { color: C.success, bg: C.successBg }
@@ -217,7 +218,10 @@ function CommunityJoinModal({ project, onClose }) {
           </div>
 
           {/* Actions */}
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4, flexWrap: 'wrap' }}>
+            {/* Not everyone who opens this lives here — for them, passing it to a
+                neighbour who does is the useful action. */}
+            <ShareButton project={project} variant="outline" style={{ marginRight: 'auto' }} />
             <Link to={`/project/${project.id}`} onClick={onClose} style={{ textDecoration: 'none' }}>
               <button style={button('outline')}>View community</button>
             </Link>
@@ -517,7 +521,16 @@ export default function DiscoverPage() {
                         color: C.blue, fontWeight: 700, fontSize: 14
                       }}>
                         View community &amp; join
-                        <span className="pg-arrow">→</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          {/* ShareButton swallows the click, so this never opens
+                              the community by accident. */}
+                          <ShareButton
+                            project={p}
+                            variant="icon"
+                            style={{ width: 30, height: 30, fontSize: 14 }}
+                          />
+                          <span className="pg-arrow">→</span>
+                        </span>
                       </div>
                     </div>
                   </div>

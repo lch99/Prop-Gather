@@ -155,6 +155,7 @@ to `/project/p1` before the router reads the URL.
 | Per-page title, description, canonical, OG, Twitter | [src/seo.jsx](src/seo.jsx) — one `<Seo>` per page | Set client-side. Google executes JS and sees these; social crawlers do not. |
 | Site-level tags + JSON-LD (Organization, WebSite) | [index.html](index.html), static | The raw-HTML floor every social crawler reads. |
 | Per-page JSON-LD | `jsonLd` prop on `<Seo>` | FAQPage on the landing page, BreadcrumbList on a community. |
+| Per-community link previews | `/s/:id` — see [2.8b](#28b-share-links--sid-optional-but-it-is-what-makes-shares-travel) | The only way to get a per-community card without prerendering. |
 | `robots.txt` | [public/robots.txt](public/robots.txt) | Copied into `dist/` verbatim. |
 | `sitemap.xml` | generated into `dist/` by [scripts/postbuild.mjs](scripts/postbuild.mjs) | Static pages plus one URL per community. |
 
@@ -469,6 +470,7 @@ AWS_SECRET_ACCESS_KEY=<r2-secret>
 | `S3_ENDPOINT` | Yes (R2) | — | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`. Omit for real AWS S3. |
 | `AWS_REGION` | **Yes** | `auto` when `S3_ENDPOINT` set | `auto` for R2; a real region for AWS. |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | **Yes** | — | From the R2 token. Never commit. |
+| `PUBLIC_SITE_URL` | No | the request's own host | The origin residents see, used for the absolute Open Graph URLs on `/s/:id` share links (2.8b). Only needed when the API answers on a different hostname than the site. |
 | `ENABLE_RETENTION_JOB` | No | enabled | Set `false` **only** if using external cron (2.9). |
 | `SEED_DEMO_DATA` | No | **off** | Inserts the demo projects and published-password accounts. **Never set it on a server** — that's the "no dirty data" switch. |
 | `BCRYPT_ROUNDS` | No | `10` | Tests lower it to 4 for speed. **Never set in production.** |
@@ -680,6 +682,60 @@ curl -s https://propgather.com.my/robots.txt
 
 Then open `https://propgather.com.my/project/<some-id>` and **reload on that
 URL**. That reload is the whole test.
+
+### 2.8b Share links — `/s/:id` (optional, but it is what makes shares travel)
+
+The Share button on every community hands out `https://<site>/s/<projectId>`.
+WhatsApp, Facebook and Telegram build their preview card by fetching that URL
+and reading the raw HTML — **they do not run JavaScript** — so what they see
+depends entirely on who answers that path:
+
+| `/s/:id` served by | Preview card | Where the visitor lands |
+|---|---|---|
+| the static frontend (default) | the generic site card from `index.html` | right community — the app's own `/s/:id` route redirects |
+| **this backend** | the community's own name, city and resident count | same, via a redirect in the served HTML |
+
+Nothing breaks without the line below; links just preview as PropGather rather
+than as the building someone is being invited to. On the single-origin
+deployment (nginx serving the built frontend and proxying `/api` to Express),
+add one location block **above** the SPA `try_files` fallback:
+
+```nginx
+    # Share links: per-community Open Graph tags for the crawlers that build
+    # link previews. Must sit above the SPA fallback, or try_files answers it
+    # with index.html and the generic card. See backend/src/routes/sharePreview.js.
+    location /s/ {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+```
+
+`sudo nginx -t && sudo systemctl reload nginx`, then check the tags a crawler
+would read:
+
+```bash
+curl -s https://<site>/s/p_desa_parkcity | grep 'og:title'
+# <meta property="og:title" content="Desa ParkCity on PropGather">
+```
+
+If that prints the site-wide title instead, the block is below `try_files` or
+missing — nginx picks the first matching prefix location, not the best one.
+
+**Split deployment** (frontend and API on different hostnames): set
+`PUBLIC_SITE_URL=https://<the site residents see>` in `/etc/propgather.env`.
+Open Graph URLs have to be absolute, and without it this route builds them from
+its own hostname — which would send everyone who taps a shared link to the API
+host.
+
+Two things this route deliberately does **not** do: it doesn't count its own
+hits as visitors (those are mostly crawler fetches — the arrival is counted from
+the app, see `POST /api/projects/:id/share-visit`), and it canonicalises to
+`/project/:id` so the share doorway never competes with the community page it
+points at for the same search ranking.
 
 ### 2.9 Document retention (PDPA — not optional)
 

@@ -185,6 +185,37 @@ project — granted by an admin approving their join application
 (`POST /api/applications` → `POST /api/applications/:id/decision`). Admins bypass
 the membership check everywhere.
 
+### Sharing a community (deliberately unauthenticated)
+
+Three routes exist so a resident can hand their community to someone who has no
+account, which is the whole point of a share:
+
+| Route | Auth | What it does |
+|---|---|---|
+| `POST /api/projects/:id/share` | none | Counts a share, `{ channel }` from a fixed list (whatsapp, telegram, facebook, x, email, copy, native) |
+| `POST /api/projects/:id/share-visit` | none | Counts an arrival on a shared link |
+| `GET /api/projects/share-stats` | admin | Shares sent vs. links opened, per community |
+| `GET /s/:id` | none | Not under `/api` — HTML with that community's Open Graph tags, then a redirect into the app |
+
+The counters live in `community_shares`, one row per (community, channel),
+upserted in place — see the `0009` migration for why an append-only event log
+would be the wrong shape for a public endpoint, and why no user id, IP or user
+agent is stored (it keeps the whole feature outside PDPA scope).
+
+Two asymmetries worth keeping:
+
+- **`visit` is reserved.** It isn't in the channel list, so a client can't post
+  it, which is what keeps "shared 40 times, opened 6 times" two honest numbers
+  rather than one.
+- **The arrival is counted from the app, not from `/s/:id`.** That URL is fetched
+  by WhatsApp's and Facebook's crawlers to build the preview card; counting those
+  would report bots as visitors. The app posts `share-visit` when it sees
+  `?from=share`, which only a browser running JavaScript ever does.
+
+`GET /s/:id` needs one nginx `location` block to actually receive the request in
+production — without it the static frontend answers and links preview as the
+generic site card. DEPLOYMENT.md 2.8b.
+
 ### Adding communities
 
 `POST /api/projects` is **admin-only** and adds a community to the directory
