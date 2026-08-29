@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Routes, Route, NavLink, useParams, useSearchParams, Navigate, Link } from 'react-router-dom'
-import { api } from '../api'
+import { api, mediaUrl } from '../api'
 import { useAuth } from '../auth'
 import { C, card, badge, button } from '../theme'
 import Seo, { SITE_URL } from '../seo'
@@ -9,6 +9,7 @@ import ChatTab from './project/ChatTab'
 import ToolsTab from './project/ToolsTab'
 import ReferencesTab from './project/ReferencesTab'
 import ShareButton from '../components/Share'
+import { CommunityAvatar, CommunityCover, HERO_SCRIM } from '../components/CommunityImage'
 
 const comingSoonTabs = ['Subscription*', 'Vendors']
 
@@ -168,11 +169,16 @@ export default function ProjectPage() {
   return (
     <div>
       {/* All four tabs canonicalise to the bare project URL: the tab content
-          is members-only, so to a crawler they are the same page. */}
+          is members-only, so to a crawler they are the same page.
+
+          A community with a cover photo shares as a picture of itself; `image`
+          is left undefined otherwise so Seo falls back to the brand mark —
+          passing null would blank the tag instead. */}
       <Seo
         path={`/project/${id}`}
         title={`${project.name} residents community`}
         description={seoDescription}
+        image={mediaUrl(project.coverUrl) || undefined}
         jsonLd={{
           '@context': 'https://schema.org',
           '@type': 'BreadcrumbList',
@@ -184,14 +190,39 @@ export default function ProjectPage() {
         }}
       />
       <div className="pg-hero-anim" style={{ background: C.headerGradientWide, color: '#fff', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', inset: 0, background: C.heroGlow, pointerEvents: 'none' }} />
+        {/* The community's own cover photo becomes the hero backdrop. HERO_SCRIM
+            rather than the card default: the heading, the address and four
+            badges all sit across the full height of this image, so the darkening
+            has to be even instead of weighted to the bottom. */}
+        {project.coverUrl && (
+          <CommunityCover
+            project={project}
+            scrim={HERO_SCRIM}
+            loading="eager"
+            style={{ position: 'absolute', inset: 0, height: 'auto' }}
+          />
+        )}
+        {/* The warm red/gold glow is what gives the plain gradient its character.
+            Over a photo it only adds a colour cast and lifts the scrim it sits
+            on top of, so a community with a cover photo goes without it. */}
+        {!project.coverUrl && (
+          <div style={{ position: 'absolute', inset: 0, background: C.heroGlow, pointerEvents: 'none' }} />
+        )}
         <div style={{
           maxWidth: 1100, margin: '0 auto', padding: 'clamp(26px, 6vw, 32px) clamp(18px, 5vw, 24px) clamp(24px, 5vw, 28px)', position: 'relative', zIndex: 1,
           display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12
         }}>
-          <div>
-            <h1 style={{ margin: '0 0 6px', fontSize: 'clamp(22px, 5.4vw, 30px)', fontWeight: 800, letterSpacing: '-0.015em', lineHeight: 1.2 }}>{project.name}</h1>
-            <div style={{ color: C.brandLight, fontSize: 14.5 }}>{project.address}, {project.city}, {project.state}</div>
+          <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', minWidth: 0 }}>
+            <CommunityAvatar
+              project={project}
+              size={56}
+              radius={15}
+              style={{ border: '2px solid rgba(255,255,255,0.5)', marginTop: 3 }}
+            />
+            <div style={{ minWidth: 0 }}>
+              <h1 style={{ margin: '0 0 6px', fontSize: 'clamp(22px, 5.4vw, 30px)', fontWeight: 800, letterSpacing: '-0.015em', lineHeight: 1.2 }}>{project.name}</h1>
+              <div style={{ color: C.brandLight, fontSize: 14.5 }}>{project.address}, {project.city}, {project.state}</div>
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <span style={glassBadge}>{project.type}</span>

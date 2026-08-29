@@ -4,6 +4,7 @@ import { api } from '../api'
 import { C, card, badge, button } from '../theme'
 import { TierBadge } from '../components/Badges'
 import ShareButton from '../components/Share'
+import { CommunityAvatar } from '../components/CommunityImage'
 import Seo from '../seo'
 
 export default function MyCommunitiesPage() {
@@ -59,19 +60,25 @@ export default function MyCommunitiesPage() {
       <div style={{ display: 'grid', gap: 16 }}>
         {me.communities.map(c => (
           <div key={c.projectId} className="pg-card-hover" style={{ ...card, padding: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <h3 style={{ margin: 0, color: C.navy }}>{c.project.name}</h3>
-                <TierBadge tier={c.tier} />
-                <span style={badge(C.success, C.successBg)}>✓ Verified</span>
-              </div>
-              <div style={{ color: C.textMuted, fontSize: 13 }}>
-                {c.project.city}, {c.project.state} · Unit {c.unit} · Verified since {c.verifiedAt}
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                <span style={badge(C.accent, C.accentLight)}>💬 2 unread forum posts</span>
-                <span style={badge(C.accent, C.accentLight)}>🔔 5 unread chat messages</span>
-                <span style={badge(C.warning, C.warningBg)}>⚠️ 1 active petition needs attention</span>
+            <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', minWidth: 0 }}>
+              {/* /auth/me returns the membership's project without its id — see
+                  userWithCommunities in backend/src/routes/auth.js — and the
+                  avatar only needs the name, type and logoUrl it does carry. */}
+              <CommunityAvatar project={c.project} size={46} radius={13} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                  <h3 style={{ margin: 0, color: C.navy }}>{c.project.name}</h3>
+                  <TierBadge tier={c.tier} />
+                  <span style={badge(C.success, C.successBg)}>✓ Verified</span>
+                </div>
+                <div style={{ color: C.textMuted, fontSize: 13 }}>
+                  {c.project.city}, {c.project.state} · Unit {c.unit} · Verified since {c.verifiedAt}
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                  <span style={badge(C.accent, C.accentLight)}>💬 2 unread forum posts</span>
+                  <span style={badge(C.accent, C.accentLight)}>🔔 5 unread chat messages</span>
+                  <span style={badge(C.warning, C.warningBg)}>⚠️ 1 active petition needs attention</span>
+                </div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>

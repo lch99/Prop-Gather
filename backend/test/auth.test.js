@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import request from 'supertest'
-import { freshApp, RESIDENT, ADMIN, login } from './helpers.js'
+import { freshApp, authed, RESIDENT, ADMIN, login } from './helpers.js'
 
 let app
 beforeEach(async () => { app = await freshApp() })
@@ -134,5 +134,16 @@ describe('GET /api/auth/me', () => {
     expect(res.status).toBe(200)
     expect(res.body.email).toBe(RESIDENT.email)
     expect(res.body.communities[0].project.name).toBe('The Lumina Residences')
+  })
+
+  it("carries the community's profile picture, so My Communities can show it", async () => {
+    const adminToken = await login(app, ADMIN.email, ADMIN.password)
+    const minted = await authed(app, adminToken).post('/api/projects/p1/images/upload-url')
+      .send({ kind: 'logo', fileName: 'mark.png', fileType: 'image/png', fileSize: 4096 })
+    await authed(app, adminToken).put('/api/projects/p1/images/logo').send({ key: minted.body.key })
+
+    const token = await login(app, RESIDENT.email, RESIDENT.password)
+    const res = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`)
+    expect(res.body.communities[0].project.logoUrl).toMatch(/^\/projects\/p1\/images\/logo\?v=/)
   })
 })

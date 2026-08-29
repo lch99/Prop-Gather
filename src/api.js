@@ -15,7 +15,7 @@
 
 import { request, uploadToStorage } from './apiClient'
 
-export { ApiError } from './apiClient'
+export { ApiError, mediaUrl } from './apiClient'
 
 // useAttachments (components/Attachments.jsx) hands us `{ name, type, size,
 // dataUrl }` rather than the original File, because the demo needed something
@@ -91,6 +91,38 @@ export const api = {
         floorsPerBlock: data.floorsPerBlock
       }
     })
+  },
+
+  // ── Community photos ──────────────────────────────────────────────────────
+  // A community's profile picture and cover photo. `project.logoUrl` /
+  // `project.coverUrl` come back on every project the API returns, as paths —
+  // mediaUrl() (re-exported above) turns one into something an <img> can load.
+  //
+  // Admin-only on the server, like createProject. `role` is the same UX
+  // short-circuit used there, never the access boundary.
+  //
+  // Takes a real File rather than the `{ dataUrl }` shape useAttachments
+  // produces: a cover photo straight off a phone is several megabytes, and
+  // base64-ing it into a string only to decode it again before upload is a
+  // detour these bytes don't need to take.
+  uploadProjectImage: async (projectId, kind, file, role) => {
+    if (role && role !== 'admin') throw new Error('Only platform admins can change a community photo.')
+
+    const { key, uploadUrl } = await request(`/projects/${projectId}/images/upload-url`, {
+      method: 'POST',
+      body: { kind, fileName: file.name, fileType: file.type, fileSize: file.size }
+    })
+
+    await uploadToStorage(uploadUrl, file, file.type)
+
+    // Returns the updated project, so a caller can drop it straight into state
+    // and get the new (cache-busting) image URL with it.
+    return request(`/projects/${projectId}/images/${kind}`, { method: 'PUT', body: { key } })
+  },
+
+  removeProjectImage: async (projectId, kind, role) => {
+    if (role && role !== 'admin') throw new Error('Only platform admins can change a community photo.')
+    return request(`/projects/${projectId}/images/${kind}`, { method: 'DELETE' })
   },
 
   // ── Registration / verification ───────────────────────────────────────────

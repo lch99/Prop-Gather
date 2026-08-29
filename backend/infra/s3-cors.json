@@ -4,7 +4,8 @@
       "AllowedOrigins": [
         "http://localhost:5173",
         "https://lch99.github.io",
-        "https://your-hostinger-domain.com"
+        "https://propgather.com.my",
+        "https://www.propgather.com.my"
       ],
       "AllowedMethods": ["PUT", "GET"],
       "AllowedHeaders": ["Content-Type"],

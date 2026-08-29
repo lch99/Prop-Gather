@@ -99,6 +99,12 @@ Two rules the wiring depends on:
   `AttachmentList` from `src/components/Attachments.jsx` (used by forum,
   chat, defect reports, and registration) rather than building a new
   upload widget — it already handles size/count limits and data-URL reads.
+  Community photos are the exception: they go straight to object storage as raw
+  `File`s, so use `CommunityAvatar` / `CommunityCover`
+  (`src/components/CommunityImage.jsx`) to render one and
+  `CommunityPhotosEditor.jsx` to change one. Both display components fall back
+  to the coloured initial / brand gradient, so never gate a layout on a
+  community having a photo — most don't.
 
 ## Backend conventions
 
@@ -134,6 +140,12 @@ Two rules the wiring depends on:
 - Sensitive documents (currently just verification uploads) live in S3, never
   as blobs in the database — see `backend/src/util/s3.js` for the presigned
   upload/download URL pattern and `backend/infra/` for the bucket config.
+  Community profile pictures and cover photos share that bucket under the
+  `community-images/` prefix but are the opposite kind of object: public,
+  served by an unauthenticated cacheable redirect, and *not* covered by the
+  14-day lifecycle rule. Keep the prefixes apart — widening the lifecycle
+  filter deletes every cover photo, and accepting a `verification-docs/` key as
+  a community photo publishes someone's SPA.
   Any admin action that touches personal data should call
   `recordAudit()` (`backend/src/util/audit.js`) so it shows up in
   `GET /api/audit-log`; recurring cleanup (e.g. the document-retention purge)

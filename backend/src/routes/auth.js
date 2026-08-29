@@ -7,7 +7,7 @@ import { validate } from '../middleware/validate.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { rateLimit } from '../middleware/rateLimit.js'
 import { conflict, unauthorized, notFound, forbidden } from '../util/errors.js'
-import { toMembership } from '../util/serialize.js'
+import { toMembership, communityImagePath } from '../util/serialize.js'
 import { recordAudit } from '../util/audit.js'
 import { deleteObject } from '../util/s3.js'
 import { wrap } from '../util/asyncHandler.js'
@@ -38,7 +38,8 @@ function publicUser(row) {
 async function userWithCommunities(userRow) {
   const db = getDb()
   const memberships = await db.all(`
-    SELECT cm.*, p.name AS project_name, p.city AS project_city, p.state AS project_state
+    SELECT cm.*, p.name AS project_name, p.city AS project_city, p.state AS project_state,
+           p.logo_key AS project_logo_key
     FROM community_memberships cm JOIN projects p ON p.id = cm.project_id
     WHERE cm.user_id = ?
   `, [userRow.id])
@@ -47,7 +48,15 @@ async function userWithCommunities(userRow) {
     ...publicUser(userRow),
     communities: memberships.map(m => ({
       ...toMembership(m),
-      project: { name: m.project_name, city: m.project_city, state: m.project_state }
+      project: {
+        name: m.project_name,
+        city: m.project_city,
+        state: m.project_state,
+        // Enough for My Communities to show each community by its profile
+        // picture rather than its initial. Only the logo: the cover photo is a
+        // page banner, and this list has no banners on it.
+        ...(m.project_logo_key ? { logoUrl: communityImagePath(m.project_id, 'logo', m.project_logo_key) } : {})
+      }
     }))
   }
 }
