@@ -12,6 +12,25 @@ const DEFAULT_BASE = import.meta.env.DEV ? 'http://localhost:4000/api' : '/api'
 
 export const API_BASE = (import.meta.env.VITE_API_URL || DEFAULT_BASE).replace(/\/+$/, '')
 
+/**
+ * Absolute URL for a media path the API returned — today, a community's profile
+ * picture or cover photo (`project.logoUrl` / `project.coverUrl`, built by
+ * communityImagePath in backend/src/util/serialize.js).
+ *
+ * The backend returns these relative to its own base because it has no reliable
+ * idea what hostname the browser reached it on. Always absolute here, never just
+ * API_BASE + path: in production API_BASE is the same-origin `/api`, and an
+ * og:image has to be an absolute URL or crawlers ignore it.
+ *
+ * Returns null for a missing path, so callers can write
+ * `mediaUrl(project.logoUrl) ?? <fallback>` without a separate presence check.
+ */
+export function mediaUrl(path) {
+  if (!path) return null
+  const base = /^https?:\/\//.test(API_BASE) ? API_BASE : `${window.location.origin}${API_BASE}`
+  return `${base}${path}`
+}
+
 const TOKEN_KEY = 'pg_token'
 
 // Mirrors the storage choice auth.jsx makes for the user profile: localStorage

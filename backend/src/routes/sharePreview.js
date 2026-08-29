@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { getDb } from '../db/index.js'
+import { communityImagePath } from '../util/serialize.js'
 import { wrap } from '../util/asyncHandler.js'
 
 // The public face of the share sheet: GET /s/:projectId.
@@ -107,10 +108,10 @@ sharePreviewRouter.get('/:id', wrap(async (req, res) => {
   // which is what the repo ships. Replacing it with a 1200x630
   // public/brand/og-image.png upgrades every card at once: change it here, in
   // src/seo.jsx, and in index.html.
-  const image = `${origin}/brand/propgather-icon.png`
+  const brandImage = `${origin}/brand/propgather-icon.png`
 
   const project = await getDb().get(
-    'SELECT id, name, type, city, state, owner_count FROM projects WHERE id = ?',
+    'SELECT id, name, type, city, state, owner_count, cover_key FROM projects WHERE id = ?',
     [req.params.id]
   )
 
@@ -123,11 +124,21 @@ sharePreviewRouter.get('/:id', wrap(async (req, res) => {
       description: "That community link has expired or moved. Browse Malaysia's directory of verified property communities and find yours.",
       canonical: `${origin}/discover`,
       url: `${origin}/discover`,
-      image,
+      image: brandImage,
       redirectPath: '/discover'
     }))
     return
   }
+
+  // A community that has uploaded a cover photo previews as its own building
+  // rather than the PropGather mark — the single biggest difference between a
+  // link a neighbour scrolls past in a group chat and one they tap. The route
+  // behind this path is public and unauthenticated precisely so WhatsApp's and
+  // Facebook's crawlers can fetch it. `origin + /api` mirrors the deployment
+  // this file already assumes: nginx serving the frontend and proxying /api here.
+  const image = project.cover_key
+    ? `${origin}/api${communityImagePath(project.id, 'cover', project.cover_key)}`
+    : brandImage
 
   const where = [project.city, project.state].filter(Boolean).join(', ')
   const residents = project.owner_count > 0

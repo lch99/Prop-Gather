@@ -7,6 +7,12 @@ import { customAlphabet } from 'nanoid'
 // to auto-expire objects, independent of anything this app does.
 export const VERIFICATION_DOC_PREFIX = 'verification-docs'
 
+// Community profile pictures and cover photos. A separate prefix from the one
+// above on purpose: the lifecycle rule expires everything under
+// verification-docs/ after 14 days, and a community's photo is not on a
+// retention clock — it stays until an admin replaces it.
+export const COMMUNITY_IMAGE_PREFIX = 'community-images'
+
 const UPLOAD_URL_TTL_SECONDS = 5 * 60
 const DOWNLOAD_URL_TTL_SECONDS = 15 * 60
 
@@ -44,14 +50,26 @@ export function buildDocumentKey(userId) {
   return `${VERIFICATION_DOC_PREFIX}/${userId}/${Date.now()}-${keySuffix()}`
 }
 
+// One key per upload rather than a fixed `<projectId>/logo` path, so replacing a
+// photo produces a new key. That is what lets the public image URL carry a
+// version token derived from the key (see serialize.js): a stable URL whose
+// contents changed silently would keep serving the old photo out of every
+// browser and CDN cache that already has it.
+export function buildCommunityImageKey(projectId, kind) {
+  return `${COMMUNITY_IMAGE_PREFIX}/${projectId}/${kind}-${Date.now()}-${keySuffix()}`
+}
+
 export async function createUploadUrl(key, contentType) {
   const command = new PutObjectCommand({ Bucket: bucket(), Key: key, ContentType: contentType })
   return getSignedUrl(s3(), command, { expiresIn: UPLOAD_URL_TTL_SECONDS })
 }
 
-export async function createDownloadUrl(key) {
+// `ttlSeconds` is overridden for community photos, which are public images
+// redirected to from a cacheable URL rather than handed to one admin to open
+// once — the signature has to outlive the redirect's own cache window.
+export async function createDownloadUrl(key, ttlSeconds = DOWNLOAD_URL_TTL_SECONDS) {
   const command = new GetObjectCommand({ Bucket: bucket(), Key: key })
-  return getSignedUrl(s3(), command, { expiresIn: DOWNLOAD_URL_TTL_SECONDS })
+  return getSignedUrl(s3(), command, { expiresIn: ttlSeconds })
 }
 
 // Returns the object's metadata, or null if it doesn't exist (e.g. the client

@@ -127,6 +127,32 @@ Flow (`src/util/s3.js`, `src/routes/applications.js`):
    bucket's lifecycle rule instead (see below) — matching the "deleted within
    14 days" promise shown in the frontend's registration flow.
 
+### Community photos
+
+The same bucket, a different prefix (`community-images/`), and deliberately
+different rules — see `src/routes/projects.js`. A community's profile picture
+and cover photo (`projects.logo_key` / `projects.cover_key`) are public images
+on a public directory, not personal data on a retention clock:
+
+1. Admin calls `POST /api/projects/:id/images/upload-url` with `{kind, fileName,
+   fileType, fileSize}` (`kind` is `logo` or `cover`) → `{key, uploadUrl}`.
+2. Browser `PUT`s the bytes straight to `uploadUrl`, as above.
+3. Admin calls `PUT /api/projects/:id/images/:kind` with `{key}`. The server
+   `HeadObject`s it, and rejects any key not minted for this community and this
+   slot — without that check an admin could point a community at a resident's
+   ownership document, which step 4 would then publish.
+4. `GET /api/projects/:id/images/:kind` is **public** and answers `302` to a
+   freshly presigned `GET`, cacheable for 15 minutes. That gives a stable URL an
+   `<img>`, a CDN and an `og:image` can all use; the version token on it
+   (`?v=`) changes whenever the photo is replaced, so caches miss on the new one.
+   Every project the API serialises carries `logoUrl`/`coverUrl` pointing here.
+5. Replacing or removing a photo deletes the object it displaced. There is no
+   lifecycle rule over this prefix, and there should not be one.
+
+Only admins can write these (`requireRole('admin')`), the same rule as creating
+a community — a community's photos are its shared identity in the directory,
+not something one of its residents should be able to change for everyone.
+
 **Required env vars** (`.env.example`): `AWS_REGION`, `AWS_S3_BUCKET`,
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, plus `S3_ENDPOINT` when the
 bucket lives on a non-AWS S3-compatible provider (this project uses

@@ -6,7 +6,8 @@ import { validate } from '../middleware/validate.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { rateLimit } from '../middleware/rateLimit.js'
 import { toProject } from '../util/serialize.js'
-import { conflict, notFound } from '../util/errors.js'
+import { badRequest, conflict, notFound } from '../util/errors.js'
+import { COMMUNITY_IMAGE_PREFIX, buildCommunityImageKey, createUploadUrl, createDownloadUrl, headObject, deleteObject } from '../util/s3.js'
 import { recordAudit } from '../util/audit.js'
 import { wrap } from '../util/asyncHandler.js'
 
@@ -142,6 +143,161 @@ projectsRouter.post('/', requireAuth, requireRole('admin'), validate(createSchem
   })
 
   res.status(201).json(toProject(await db.get('SELECT * FROM projects WHERE id = ?', [projectId])))
+}))
+
+// ── Profile picture & cover photo ───────────────────────────────────────────
+//
+// Same three-step shape as the verification upload in routes/applications.js:
+// ask for a presigned PUT URL, send the bytes straight to S3, then hand back the
+// key. The bytes never pass through this process, and the database stores the
+// key alone — GET /api/projects returns the whole directory in one response, so
+// an inline image per row would be paid for by every visitor on their first
+// page load.
+//
+// The difference from a verification document is who may look: these are public
+// images on a public directory page, which is why the GET below has no auth and
+// why it is a cacheable redirect rather than a presigned URL handed to the
+// client (a URL that expires in minutes cannot be cached, and cannot be used as
+// an og:image either).
+
+// Column per kind. A closed map, not a caller-supplied string interpolated into
+// SQL — `kind` reaches these routes straight from the URL path.
+const IMAGE_COLUMNS = { logo: 'logo_key', cover: 'cover_key' }
+
+const MAX_IMAGE_MB = 8
+const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'])
+
+// The redirect below is cached for this long; the presigned URL it points at
+// lasts four times as long, so a browser that cached the redirect at the last
+// possible moment still gets a signature with plenty of life left.
+const IMAGE_REDIRECT_CACHE_SECONDS = 15 * 60
+const IMAGE_SIGNATURE_TTL_SECONDS = 60 * 60
+
+const imageKind = (value) => (Object.prototype.hasOwnProperty.call(IMAGE_COLUMNS, value) ? value : null)
+
+const imageUploadUrlSchema = z.object({
+  kind: z.enum(['logo', 'cover'], { errorMap: () => ({ message: 'Choose either the profile picture or the cover photo.' }) }),
+  fileName: z.string().trim().min(1, 'fileName is required').max(200),
+  fileType: z.string().trim().min(1, 'fileType is required'),
+  fileSize: z.number().positive().max(MAX_IMAGE_MB * 1024 * 1024, `Image must be under ${MAX_IMAGE_MB} MB`)
+})
+
+// Admin-only, like POST / above: a community's photos are its shared identity in
+// the directory, so they follow the same rule as every other project-level write
+// rather than being editable by any single one of its residents.
+projectsRouter.post('/:id/images/upload-url', requireAuth, requireRole('admin'), validate(imageUploadUrlSchema), wrap(async (req, res, next) => {
+  const project = await getDb().get('SELECT id FROM projects WHERE id = ?', [req.params.id])
+  if (!project) return next(notFound("We couldn't find that community."))
+
+  if (!ALLOWED_IMAGE_TYPES.has(req.body.fileType)) {
+    return next(badRequest("That file type isn't supported. Please upload a JPG, PNG, WebP or GIF image."))
+  }
+
+  const key = buildCommunityImageKey(req.params.id, req.body.kind)
+  const uploadUrl = await createUploadUrl(key, req.body.fileType)
+  res.json({ key, uploadUrl, expiresIn: 300 })
+}))
+
+const setImageSchema = z.object({
+  key: z.string().trim().min(1, 'Image must be uploaded to storage before saving').max(255)
+})
+
+// Step 3: point the community at an object that is now in the bucket. Verified
+// with a HEAD rather than trusted, for the same reason applications.js does it —
+// the client asked for the upload URL, so it also knows a key it may never have
+// actually uploaded anything to.
+projectsRouter.put('/:id/images/:kind', requireAuth, requireRole('admin'), validate(setImageSchema), wrap(async (req, res, next) => {
+  const kind = imageKind(req.params.kind)
+  if (!kind) return next(notFound('That is not a community photo we recognise.'))
+
+  const db = getDb()
+  const project = await db.get('SELECT * FROM projects WHERE id = ?', [req.params.id])
+  if (!project) return next(notFound("We couldn't find that community."))
+
+  const { key } = req.body
+  // Keys are minted by the route above and scoped to this community and kind.
+  // Accepting one from anywhere else would let an admin point a community at any
+  // object in the bucket — a resident's ownership-proof document included, which
+  // the unauthenticated GET below would then publish.
+  if (!key.startsWith(`${COMMUNITY_IMAGE_PREFIX}/${req.params.id}/${kind}-`)) {
+    return next(badRequest("That image doesn't belong to this community. Please upload it again."))
+  }
+
+  const head = await headObject(key)
+  if (!head) return next(badRequest("We couldn't find your uploaded image. Please choose the file again."))
+  if (head.ContentLength > MAX_IMAGE_MB * 1024 * 1024) {
+    await deleteObject(key).catch(() => {})
+    return next(badRequest(`That image is larger than ${MAX_IMAGE_MB} MB. Please upload a smaller one.`))
+  }
+
+  const previousKey = project[IMAGE_COLUMNS[kind]]
+  await db.run(`UPDATE projects SET ${IMAGE_COLUMNS[kind]} = ? WHERE id = ?`, [key, req.params.id])
+
+  // After the row is updated, and never fatally: an orphaned object costs a few
+  // cents of storage, whereas failing here would leave the community pointing at
+  // a photo the admin has already been told was saved.
+  if (previousKey && previousKey !== key) await deleteObject(previousKey).catch(() => {})
+
+  await recordAudit(db, {
+    actorUserId: req.user.id,
+    actorRole: req.user.role,
+    action: 'project.image_updated',
+    targetType: 'project',
+    targetId: req.params.id,
+    projectId: req.params.id,
+    metadata: { kind, replaced: !!previousKey }
+  })
+
+  res.json(toProject(await db.get('SELECT * FROM projects WHERE id = ?', [req.params.id])))
+}))
+
+projectsRouter.delete('/:id/images/:kind', requireAuth, requireRole('admin'), wrap(async (req, res, next) => {
+  const kind = imageKind(req.params.kind)
+  if (!kind) return next(notFound('That is not a community photo we recognise.'))
+
+  const db = getDb()
+  const project = await db.get('SELECT * FROM projects WHERE id = ?', [req.params.id])
+  if (!project) return next(notFound("We couldn't find that community."))
+
+  const existingKey = project[IMAGE_COLUMNS[kind]]
+  if (!existingKey) return next(notFound('There is no photo to remove here.'))
+
+  await db.run(`UPDATE projects SET ${IMAGE_COLUMNS[kind]} = NULL WHERE id = ?`, [req.params.id])
+  await deleteObject(existingKey).catch(() => {})
+
+  await recordAudit(db, {
+    actorUserId: req.user.id,
+    actorRole: req.user.role,
+    action: 'project.image_removed',
+    targetType: 'project',
+    targetId: req.params.id,
+    projectId: req.params.id,
+    metadata: { kind }
+  })
+
+  res.json(toProject(await db.get('SELECT * FROM projects WHERE id = ?', [req.params.id])))
+}))
+
+// Public and unauthenticated, because the pages it appears on are: an <img> on
+// /discover is loaded by browsers that have never signed in, and by the crawlers
+// building a share card (routes/sharePreview.js points og:image here).
+//
+// A 302 to a freshly signed URL rather than a proxied stream, so the bytes
+// travel from S3 to the browser directly and this process stays out of the path
+// of every thumbnail on a directory page. The URL is stable and versioned (see
+// communityImagePath in util/serialize.js), which is what makes it cacheable.
+projectsRouter.get('/:id/images/:kind', wrap(async (req, res, next) => {
+  const kind = imageKind(req.params.kind)
+  if (!kind) return next(notFound('That is not a community photo we recognise.'))
+
+  const row = await getDb().get(
+    `SELECT ${IMAGE_COLUMNS[kind]} AS image_key FROM projects WHERE id = ?`,
+    [req.params.id]
+  )
+  if (!row?.image_key) return next(notFound('That community has no photo here yet.'))
+
+  res.set('Cache-Control', `public, max-age=${IMAGE_REDIRECT_CACHE_SECONDS}`)
+  res.redirect(302, await createDownloadUrl(row.image_key, IMAGE_SIGNATURE_TTL_SECONDS))
 }))
 
 // ── Share counters ──────────────────────────────────────────────────────────

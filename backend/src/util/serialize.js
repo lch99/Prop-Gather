@@ -1,3 +1,17 @@
+// Where a community's profile picture / cover photo is served from.
+//
+// Relative to the API base, not absolute: this module has no request and so no
+// idea what hostname the caller reached us on. The frontend turns it into a URL
+// with mediaUrl() in src/apiClient.js; backend callers that need an absolute one
+// (routes/sharePreview.js) prefix their own origin.
+//
+// The `v` token is the random tail of the S3 key, which changes on every upload
+// (buildCommunityImageKey in util/s3.js). The route itself answers with a short
+// cache window and a redirect to a presigned URL, so without this a replaced
+// photo would keep showing the old one until every cache expired.
+export const communityImagePath = (projectId, kind, key) =>
+  `/projects/${encodeURIComponent(projectId)}/images/${kind}?v=${encodeURIComponent(key.slice(-12))}`
+
 export const toProject = (row) => ({
   id: row.id,
   name: row.name,
@@ -11,6 +25,10 @@ export const toProject = (row) => ({
   blocks: JSON.parse(row.blocks),
   floorsPerBlock: row.floors_per_block,
   latestThread: row.latest_thread,
+  // Omitted rather than null when unset, so a caller can write
+  // `project.logoUrl ? <img> : <letter tile>` and get the fallback either way.
+  ...(row.logo_key ? { logoUrl: communityImagePath(row.id, 'logo', row.logo_key) } : {}),
+  ...(row.cover_key ? { coverUrl: communityImagePath(row.id, 'cover', row.cover_key) } : {}),
   ...(row.active_offer_banner ? { activeOfferBanner: true } : {})
 })
 

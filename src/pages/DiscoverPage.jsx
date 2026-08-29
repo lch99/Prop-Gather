@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
-import { C, card, badge, button, chipColor } from '../theme'
+import { C, card, badge, button, typeChipColor } from '../theme'
 import Seo from '../seo'
 import ShareButton from '../components/Share'
+import { CommunityAvatar, CommunityCover } from '../components/CommunityImage'
 
 const activityColor = (level) => {
   if (level === 'High') return { color: C.success, bg: C.successBg }
@@ -166,23 +167,41 @@ function CommunityJoinModal({ project, onClose }) {
         style={{ ...card, width: '100%', maxWidth: 520, padding: 0, position: 'relative', overflow: 'hidden' }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Header strip */}
+        {/* Header strip — the community's own cover photo where there is one,
+            behind the same gradient so the white text keeps its contrast either
+            way. CommunityCover paints its own scrim over a photo; the glow layer
+            is what carries a community that has not uploaded one. */}
         <div style={{
+          position: 'relative',
           background: `${C.heroGlow}, ${C.headerGradient}`,
           padding: '24px 28px 20px',
-          color: '#fff'
+          color: '#fff',
+          overflow: 'hidden'
         }}>
-          <button onClick={onClose} style={{
-            position: 'absolute', top: 14, right: 16, border: 'none', background: 'rgba(255,255,255,0.2)',
+          {project.coverUrl && (
+            <CommunityCover project={project} style={{ position: 'absolute', inset: 0, height: 'auto' }} />
+          )}
+          <button onClick={onClose} aria-label="Close" style={{
+            position: 'absolute', top: 14, right: 16, zIndex: 1, border: 'none', background: 'rgba(255,255,255,0.2)',
             borderRadius: '50%', width: 28, height: 28, fontSize: 16, cursor: 'pointer',
             color: '#fff', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}>×</button>
-          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.7)', marginBottom: 6, textTransform: 'uppercase' }}>
-            Community
-          </div>
-          <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800 }}>{project.name}</h2>
-          <div style={{ fontSize: 13.5, color: 'rgba(255,255,255,0.8)' }}>
-            {project.address}, {project.city}, {project.state}
+          <div style={{ position: 'relative', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+            <CommunityAvatar
+              project={project}
+              size={52}
+              radius={14}
+              style={{ border: '2px solid rgba(255,255,255,0.5)', marginTop: 2 }}
+            />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.78)', marginBottom: 6, textTransform: 'uppercase' }}>
+                Community
+              </div>
+              <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800 }}>{project.name}</h2>
+              <div style={{ fontSize: 13.5, color: 'rgba(255,255,255,0.85)' }}>
+                {project.address}, {project.city}, {project.state}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -470,7 +489,7 @@ export default function DiscoverPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
               {filtered.map((p, i) => {
                 const ac = activityColor(p.activityLevel)
-                const [ctext, cbg] = chipColor(p.type)
+                const [ctext, cbg] = typeChipColor(p.type)
                 return (
                   <div
                     key={p.id}
@@ -482,15 +501,15 @@ export default function DiscoverPage() {
                     }}
                     onClick={() => setSelectedProject(p)}
                   >
-                    {/* brand accent strip ties every card to the theme */}
-                    <div style={{ height: 5, background: C.headerGradient, flexShrink: 0 }} />
+                    {/* The community's own cover photo where there is one;
+                        otherwise the brand accent strip that ties every card to
+                        the theme. */}
+                    {p.coverUrl
+                      ? <CommunityCover project={p} height={132} />
+                      : <div style={{ height: 5, background: C.headerGradient, flexShrink: 0 }} />}
                     <div style={{ padding: 18, flex: 1, display: 'flex', flexDirection: 'column' }}>
                       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                        <div style={{
-                          width: 44, height: 44, borderRadius: 12, background: cbg, color: ctext,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontWeight: 800, fontSize: 19, flexShrink: 0
-                        }}>{p.name.charAt(0)}</div>
+                        <CommunityAvatar project={p} size={44} radius={12} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                             <h3 style={{ margin: 0, color: C.navy, fontSize: 17, lineHeight: 1.25 }}>{p.name}</h3>

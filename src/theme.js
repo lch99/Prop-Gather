@@ -40,12 +40,14 @@ export const C = {
 // cheerful color pairs [text, background] for varied chips/badges
 // text colors are deepened so each clears WCAG AA (4.5:1) on its tint — readable for older eyes
 export const chipPalette = [
-  ['#2F6FB0', '#E7F0FA'], // brand blue
-  ['#A83E46', '#FBEAEA'], // brand red
-  ['#B45309', '#FEF3C7'], // gold
-  ['#0F766E', '#CCFBF1'], // teal
-  ['#15803D', '#DCFCE7'], // green
-  ['#475569', '#E2E8F0']  // slate
+  ['#2F6FB0', '#E7F0FA'], // 0 brand blue
+  ['#A83E46', '#FBEAEA'], // 1 brand red
+  ['#B45309', '#FEF3C7'], // 2 gold
+  ['#0F766E', '#CCFBF1'], // 3 teal
+  ['#15803D', '#DCFCE7'], // 4 green
+  ['#6D28D9', '#EDE9FE'], // 5 violet
+  ['#A21CAF', '#FAE8FF'], // 6 plum
+  ['#475569', '#E2E8F0']  // 7 slate
 ]
 
 // deterministically map any label to a chip color so a given type is always the same hue
@@ -53,6 +55,31 @@ export const chipColor = (label = '') => {
   let sum = 0
   for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i)
   return chipPalette[sum % chipPalette.length]
+}
+
+// Property types are the one place where several chips sit side by side in the
+// same list (Discover cards, the admin directory, the admin type picker), so a
+// hash collision reads as a bug — two different types wearing the same colour.
+// The types we ship get a fixed, hand-picked slot each; the slots they claim are
+// then withheld from the hash below, so an admin-created free-text type can
+// never land on top of one of them either.
+const typeChipSlot = {
+  'Condo': 1,               // brand red
+  'Apartment': 0,           // brand blue
+  'Serviced Apartment': 5,  // violet
+  'Landed G&G': 4,          // green
+  'Township': 2             // gold
+}
+
+const unclaimedChips = chipPalette.filter((_, i) => !Object.values(typeChipSlot).includes(i))
+
+export const typeChipColor = (type = '') => {
+  const slot = typeChipSlot[(type || '').trim()]
+  if (slot !== undefined) return chipPalette[slot]
+  let sum = 0
+  const label = type || ''
+  for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i)
+  return unclaimedChips[sum % unclaimedChips.length]
 }
 
 export const tierColor = (tier) => {

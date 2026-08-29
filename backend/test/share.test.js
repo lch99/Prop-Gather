@@ -122,6 +122,28 @@ describe('GET /s/:id — the share link crawlers see', () => {
     expect(res.text).toContain('/project/p1?from=share')
   })
 
+  it('previews with the brand mark until the community has a cover photo, then with the photo', async () => {
+    // Absolute, because a crawler has no page context to resolve a relative URL
+    // against. The hostname is the one the request arrived on, so assert on the
+    // path the tag points at rather than on the ephemeral test origin.
+    const ogImage = (html) => html.match(/<meta property="og:image" content="([^"]+)">/)[1]
+
+    const before = ogImage((await request(app).get('/s/p1')).text)
+    expect(before).toMatch(/^https?:\/\//)
+    expect(before.endsWith('/brand/propgather-icon.png')).toBe(true)
+
+    const token = await login(app, ADMIN.email, ADMIN.password)
+    const minted = await authed(app, token).post('/api/projects/p1/images/upload-url')
+      .send({ kind: 'cover', fileName: 'block-a.jpg', fileType: 'image/jpeg', fileSize: 200000 })
+    const saved = await authed(app, token).put('/api/projects/p1/images/cover').send({ key: minted.body.key })
+    expect(saved.status).toBe(200)
+
+    // The public /api image route, not a presigned URL — that would be expired
+    // long before anyone tapped the card.
+    const after = ogImage((await request(app).get('/s/p1')).text)
+    expect(after.endsWith(`/api${saved.body.coverUrl}`)).toBe(true)
+  })
+
   it('escapes a community name so a stray quote or angle bracket cannot break out of the tag', async () => {
     const token = await login(app, ADMIN.email, ADMIN.password)
     const created = await authed(app, token).post('/api/projects').send({

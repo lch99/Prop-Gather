@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
-import { C, card, badge, button, chipColor } from '../theme'
+import { C, card, badge, button, typeChipColor } from '../theme'
 import { useAuth } from '../auth'
 import { PROGRESS_TYPE } from '../referenceTypes'
+import { CommunityAvatar, CommunityCover } from '../components/CommunityImage'
+import CommunityPhotosEditor from '../components/CommunityPhotosEditor'
 
 const EMPTY_COMMUNITY = { name: '', type: 'Condo', address: '', city: '', state: '', units: '', blocks: '', floorsPerBlock: '' }
 
@@ -127,7 +129,7 @@ function AddCommunityModal({ existingTypes, onClose, onCreated }) {
             <label style={labelStyle}>Property type {req}</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: customType ? 10 : 0 }}>
               {existingTypes.map(t => {
-                const [ctext, cbg] = chipColor(t)
+                const [ctext, cbg] = typeChipColor(t)
                 const on = !customType && form.type === t
                 return (
                   <button
@@ -228,6 +230,10 @@ export default function AdminOverviewPage() {
   const [search, setSearch] = useState('')
   const [adding, setAdding] = useState(false)
   const [justAdded, setJustAdded] = useState(null)
+  // The community whose photos are open in the editor. Held by id rather than by
+  // object so the card below stays the single source of truth — a save replaces
+  // the project in `projects`, and the modal re-reads it from there.
+  const [editingPhotosId, setEditingPhotosId] = useState(null)
 
   useEffect(() => {
     let alive = true
@@ -301,12 +307,22 @@ export default function AdminOverviewPage() {
     return found.length ? found : ['Condo', 'Apartment', 'Landed G&G']
   }, [projects])
 
+  // Read back out of `projects` rather than kept in state, so a save inside the
+  // editor updates the preview it is showing as well as the card behind it.
+  const editingPhotos = (projects || []).find(p => p.id === editingPhotosId) || null
+
   const onCreated = (project) => {
     setProjects(list => [...(list || []), project])
     setRefsByProject(m => ({ ...m, [project.id]: [] }))
     setSearch('')            // so the new card isn't filtered out of view
     setAdding(false)
     setJustAdded(project)
+  }
+
+  // Every save and removal in the photos editor commits on its own, so each one
+  // is folded into the list as it happens rather than on close.
+  const onPhotosUpdated = (updated) => {
+    setProjects(list => (list || []).map(p => (p.id === updated.id ? updated : p)))
   }
 
   const goReferences = (projectId, type) => {
@@ -379,7 +395,7 @@ export default function AdminOverviewPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
           {rows.map(({ project: p, refCount, latestProgress, pending, share }, i) => {
             const ac = activityColor(p.activityLevel)
-            const [ctext, cbg] = chipColor(p.type)
+            const [ctext, cbg] = typeChipColor(p.type)
             const cover = coverImage(latestProgress)
             return (
               <div
@@ -390,14 +406,15 @@ export default function AdminOverviewPage() {
                   animationDelay: `${Math.min(i * 0.04, 0.3)}s`
                 }}
               >
-                <div style={{ height: 5, background: C.headerGradient, flexShrink: 0 }} />
+                {/* The cover photo takes the place of the thin accent strip
+                    when there is one — a community that has uploaded one should
+                    look different at a glance from one that still needs it. */}
+                {p.coverUrl
+                  ? <CommunityCover project={p} height={104} />
+                  : <div style={{ height: 5, background: C.headerGradient, flexShrink: 0 }} />}
                 <div style={{ padding: 18, flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                    <div style={{
-                      width: 40, height: 40, borderRadius: 11, background: cbg, color: ctext,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: 800, fontSize: 17, flexShrink: 0
-                    }}>{p.name.charAt(0)}</div>
+                    <CommunityAvatar project={p} size={40} radius={11} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
                         <h3 style={{ margin: 0, color: C.navy, fontSize: 16, lineHeight: 1.25 }}>{p.name}</h3>
@@ -478,6 +495,12 @@ export default function AdminOverviewPage() {
                     >
                       Manage references
                     </button>
+                    <button
+                      style={{ ...button('outline'), flex: '1 1 auto', fontSize: 13, padding: '8px 12px' }}
+                      onClick={() => setEditingPhotosId(p.id)}
+                    >
+                      🖼️ {p.logoUrl || p.coverUrl ? 'Edit photos' : 'Add photos'}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -491,6 +514,14 @@ export default function AdminOverviewPage() {
           existingTypes={existingTypes}
           onClose={() => setAdding(false)}
           onCreated={onCreated}
+        />
+      )}
+
+      {editingPhotos && (
+        <CommunityPhotosEditor
+          project={editingPhotos}
+          onUpdated={onPhotosUpdated}
+          onClose={() => setEditingPhotosId(null)}
         />
       )}
     </div>
