@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { C, card, button } from '../theme'
 import Seo from '../seo'
-import { useAuth, DEMO_ACCOUNTS, SHOW_DEMO_LOGINS } from '../auth'
+import { useAuth, DEMO_ACCOUNTS, SHOW_DEMO_LOGINS, homePathFor } from '../auth'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -15,10 +15,13 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const next = searchParams.get('next') || '/my-communities'
+  // Where they were headed, if a guard bounced them here. Otherwise it depends
+  // on who signs in, which isn't known until the login resolves — a staff-only
+  // admin has no My Communities to land on.
+  const next = searchParams.get('next')
 
   // Already signed in? Don't show the form — go where they were headed.
-  if (user) return <Navigate to={next} replace />
+  if (user) return <Navigate to={next || homePathFor(user)} replace />
 
   const update = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }))
 
@@ -35,8 +38,8 @@ export default function LoginPage() {
     setError('')
     setBusy(true)
     try {
-      await login({ email: form.email, password: form.password, remember })
-      navigate(next, { replace: true })
+      const profile = await login({ email: form.email, password: form.password, remember })
+      navigate(next || homePathFor(profile), { replace: true })
     } catch (err) {
       setError(err.message || 'Something went wrong signing you in. Please try again.')
       setBusy(false)

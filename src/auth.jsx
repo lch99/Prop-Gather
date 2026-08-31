@@ -138,6 +138,21 @@ export function RequireAuth({ children, role }) {
   return children
 }
 
+// A platform admin reaches every community through the Admin dashboard without
+// ever joining one, so a staff-only admin account has no resident side at all —
+// My Communities is permanently empty for it. Admins promoted from a resident
+// account (backend/src/db/createAdmin.js, the intended way to make one) keep the
+// memberships they had, so this asks about memberships rather than the role.
+export function hasResidentSpace(user) {
+  return !!user && (user.role !== 'admin' || (user.communities?.length ?? 0) > 0)
+}
+
+// Where signing in lands you when no `next` was requested.
+export function homePathFor(user) {
+  if (!user) return '/'
+  return hasResidentSpace(user) ? '/my-communities' : '/admin'
+}
+
 export function initials(name = '') {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '?'
 }

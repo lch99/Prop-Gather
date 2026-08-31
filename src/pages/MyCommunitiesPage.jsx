@@ -24,6 +24,10 @@ export default function MyCommunitiesPage() {
   }
   if (!me) return <div style={{ maxWidth: 1000, margin: '0 auto', padding: 24, color: C.textMuted }}>Loading...</div>
 
+  // An admin with memberships of their own (createAdmin promotes a resident
+  // account, keeping them) still gets the ordinary resident view.
+  const staffOnlyAdmin = me.role === 'admin' && me.communities.length === 0
+
   return (
     <div>
       <Seo path="/my-communities" title="My communities" noindex />
@@ -41,8 +45,26 @@ export default function MyCommunitiesPage() {
 
       <div style={{ maxWidth: 1000, margin: '0 auto', padding: '24px 24px 28px' }}>
       {/* Every new account starts with none of these — the demo's fixed resident
-          always had two, so this state never used to be reachable. */}
-      {me.communities.length === 0 && (
+          always had two, so this state never used to be reachable. A staff-only
+          admin lands here permanently empty: they already read every community
+          from the Admin dashboard, so tell them that instead of sending them off
+          to queue behind their own approval. The nav hides this page for them
+          (hasResidentSpace in auth.jsx) — this is the direct-link fallback. */}
+      {me.communities.length === 0 && (staffOnlyAdmin ? (
+        <div style={{ ...card, padding: 28, textAlign: 'center' }}>
+          <div style={{ fontSize: 34, marginBottom: 10 }}>🛠️</div>
+          <h3 style={{ margin: '0 0 8px', color: C.navy }}>You have access to every community</h3>
+          <p style={{ margin: '0 auto 16px', color: C.textMuted, fontSize: 14, lineHeight: 1.6, maxWidth: 460 }}>
+            This page lists the communities you belong to as a verified resident. As a platform admin you open
+            any community from the Admin dashboard without joining one, so it stays empty — unless you also
+            verify a property you own.
+          </p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Link to="/admin"><button style={button('primary')}>Go to Admin</button></Link>
+            <Link to="/discover"><button style={button('outline')}>Browse communities</button></Link>
+          </div>
+        </div>
+      ) : (
         <div style={{ ...card, padding: 28, textAlign: 'center' }}>
           <div style={{ fontSize: 34, marginBottom: 10 }}>🏘️</div>
           <h3 style={{ margin: '0 0 8px', color: C.navy }}>No verified communities yet</h3>
@@ -55,7 +77,7 @@ export default function MyCommunitiesPage() {
             <Link to="/register"><button style={button('outline')}>Verify my property</button></Link>
           </div>
         </div>
-      )}
+      ))}
 
       <div style={{ display: 'grid', gap: 16 }}>
         {me.communities.map(c => (
@@ -100,12 +122,16 @@ export default function MyCommunitiesPage() {
         ))}
       </div>
 
-      <div style={{ marginTop: 28, ...card, padding: 20, textAlign: 'center' }}>
-        <p style={{ margin: 0, color: C.textMuted }}>
-          Not seeing your project? Search the national directory and submit a verification request.
-        </p>
-        <Link to="/register"><button style={{ ...button('secondary'), marginTop: 12 }}>Join another community</button></Link>
-      </div>
+      {/* Redundant next to the admin empty state above, which already says why
+          the list is empty and where to go instead. */}
+      {!staffOnlyAdmin && (
+        <div style={{ marginTop: 28, ...card, padding: 20, textAlign: 'center' }}>
+          <p style={{ margin: 0, color: C.textMuted }}>
+            Not seeing your project? Search the national directory and submit a verification request.
+          </p>
+          <Link to="/register"><button style={{ ...button('secondary'), marginTop: 12 }}>Join another community</button></Link>
+        </div>
+      )}
       </div>
     </div>
   )
