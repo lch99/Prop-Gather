@@ -77,8 +77,11 @@ Two rules the wiring depends on:
   (localStorage vs sessionStorage). It caches the user profile alongside the
   token only to avoid a logged-out flicker on first paint; the token is the
   credential, and `refresh()` re-reads the profile from `/auth/me` (call it
-  after anything that changes memberships). A 401 on a request that carried a
-  token clears the session. `DEMO_ACCOUNTS` are the backend's seeded dev
+  after anything that changes memberships). The cached profile is revalidated
+  once on every load, and memberships are read from `useAuth().user` — refresh
+  that rather than fetching a private copy of `/auth/me`, or the nav and the
+  page disagree. A 401 on a request that carried a token clears the session.
+  Any `?next=` destination goes through `safeNextPath()` before navigating. `DEMO_ACCOUNTS` are the backend's seeded dev
   accounts and are only rendered when `SHOW_DEMO_LOGINS` is on — dev-only by
   default. Password rules and rate limiting belong in `backend/`, not here.
 - **Pages are lazy-loaded**: every route in `src/App.jsx` is its own chunk via

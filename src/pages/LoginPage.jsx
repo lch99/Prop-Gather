@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { C, card, button } from '../theme'
 import Seo from '../seo'
-import { useAuth, DEMO_ACCOUNTS, SHOW_DEMO_LOGINS, homePathFor } from '../auth'
+import { useAuth, DEMO_ACCOUNTS, SHOW_DEMO_LOGINS, homePathFor, safeNextPath } from '../auth'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -15,13 +15,18 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  // Where they were headed, if a guard bounced them here. Otherwise it depends
-  // on who signs in, which isn't known until the login resolves — a staff-only
-  // admin has no My Communities to land on.
-  const next = searchParams.get('next')
+  // Where they were headed, if a guard bounced them here — only ever a path
+  // inside the app (see safeNextPath). Otherwise it depends on who signs in,
+  // which isn't known until the login resolves: a staff-only admin has no My
+  // Communities to land on.
+  const next = safeNextPath(searchParams.get('next'))
+  // ?switch=1: someone already signed in asked to use a different account
+  // (RegisterPage's "use a different one"). Without it that link bounced them
+  // straight back out before the form could appear.
+  const switching = searchParams.get('switch') === '1'
 
   // Already signed in? Don't show the form — go where they were headed.
-  if (user) return <Navigate to={next || homePathFor(user)} replace />
+  if (user && !switching) return <Navigate to={next || homePathFor(user)} replace />
 
   const update = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }))
 
@@ -74,6 +79,14 @@ export default function LoginPage() {
       </div>
 
       <form onSubmit={submit} style={{ ...card, padding: 28, display: 'grid', gap: 18 }}>
+        {user && switching && (
+          <div style={{ background: C.blueLight, borderRadius: C.radiusSm, padding: '11px 14px', fontSize: 14.5, color: C.text, lineHeight: 1.55 }}>
+            You're signed in as <strong>{user.name}</strong>. Signing in below switches to another account, or{' '}
+            <Link to={next || homePathFor(user)} style={{ color: C.blue, fontWeight: 700 }}>
+              carry on as {user.name}
+            </Link>.
+          </div>
+        )}
         <Field label="Email address">
           <input
             type="email"

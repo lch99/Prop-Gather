@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { api } from './api'
-import { clearToken, setSessionExpiredHandler, setToken } from './apiClient'
+import { clearToken, getToken, setSessionExpiredHandler, setToken } from './apiClient'
 
 const STORAGE_KEY = 'pg_user'
 const AuthContext = createContext(null)
@@ -31,7 +31,7 @@ function readStored() {
 
 // The profile is cached next to the token purely so a refresh paints a signed-in
 // header immediately. The token is the actual credential; this copy is a hint
-// that gets replaced by whatever /auth/me says.
+// that AuthProvider replaces with whatever /auth/me says as soon as the app loads.
 function persist(profile, remember) {
   const store = remember ? localStorage : sessionStorage
   const other = remember ? sessionStorage : localStorage
@@ -96,12 +96,51 @@ export function AuthProvider({ children }) {
   // Re-reads the profile from the server — call it after anything that changes
   // the user's memberships (an approved application) so gated tabs unlock
   // without a full reload.
-  const refresh = useCallback(async () => {
-    const profile = await api.getMe()
-    persist(profile, remember)
-    setUser(profile)
-    return profile
+  //
+  // One request per session at a time: the load-time check below and a page that
+  // re-reads the profile as it mounts share it instead of racing. A response is
+  // dropped if the session changed while it was in flight, or a logout or an
+  // account switch could be undone by a profile that arrived a moment later.
+  const inflight = useRef(null)
+  const refresh = useCallback(() => {
+    const token = getToken()
+    if (inflight.current?.token !== token) {
+      const promise = api.getMe()
+        .then(profile => {
+          if (getToken() === token) {
+            persist(profile, remember)
+            setUser(profile)
+          }
+          return profile
+        })
+        .finally(() => {
+          if (inflight.current?.promise === promise) inflight.current = null
+        })
+      inflight.current = { token, promise }
+    }
+    return inflight.current.promise
   }, [remember])
+
+  // Revalidate the cached profile once per load. It was written at sign-in and
+  // nothing else rewrites it, so without this a membership approved since then
+  // stayed invisible — the nav went on hiding My Communities, and login went on
+  // routing to /admin — until the user signed out and back in.
+  useEffect(() => {
+    if (!user) return
+    if (!getToken()) {
+      // A cached profile with no credential behind it can't be revalidated, and
+      // would show a signed-in header that 401s on every request.
+      forget()
+      setUser(null)
+      return
+    }
+    refresh().catch(() => {
+      // Offline, or the server is down: keep the cached profile. A token the
+      // server rejects signs the user out through the handler above instead.
+    })
+    // Once, on load — not whenever the profile changes, which refresh() itself does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const logout = useCallback(() => {
     clearToken()
@@ -151,6 +190,18 @@ export function hasResidentSpace(user) {
 export function homePathFor(user) {
   if (!user) return '/'
   return hasResidentSpace(user) ? '/my-communities' : '/admin'
+}
+
+// A `next` destination taken from the query string, or null if it isn't a path
+// inside this app. Anyone can write that link: "//evil.example" — or
+// "/\evil.example", or "/<tab>/evil.example", which browsers read the same way —
+// is another origin, and handing it to history.pushState throws; "/login" would
+// send the login page straight back to itself, forever.
+export function safeNextPath(value) {
+  if (typeof value !== 'string' || !value.startsWith('/')) return null
+  if (value.startsWith('//') || /[\u0000-\u001f\\]/.test(value)) return null
+  if (/^\/login(?:[/?#]|$)/.test(value)) return null
+  return value
 }
 
 export function initials(name = '') {

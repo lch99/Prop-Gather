@@ -105,10 +105,11 @@ function LockedGate({ project, isLoggedIn }) {
 
 export default function ProjectPage() {
   const { id } = useParams()
-  const { user } = useAuth()
+  const { user, refresh } = useAuth()
   const [project, setProject] = useState(null)
   const [popupTab, setPopupTab] = useState(null)
-  const [myComms, setMyComms] = useState(null)
+  // The community whose membership has been re-checked with the server.
+  const [recheckedId, setRecheckedId] = useState(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => {
@@ -129,21 +130,30 @@ export default function ProjectPage() {
     setSearchParams(next, { replace: true })
   }, [id, searchParams, setSearchParams])
 
+  // Membership comes from the shared profile (auth.jsx) rather than a private
+  // fetch of /auth/me, so this page and the header nav can't disagree. A member —
+  // or an admin, who reaches every community — sees the tabs at once with no
+  // request. Only a profile that says "not a member" is re-read, once per
+  // community, so a resident approved since it was cached isn't shown the locked
+  // gate. Keyed on the community rather than the profile: refresh() replaces
+  // the profile, and re-running on that would loop.
+  const isVerified = !!user && (user.role === 'admin' || (user.communities || []).some(c => c.projectId === id))
+  const needsRecheck = !!user && !isVerified
+
   useEffect(() => {
-    if (!user) { setMyComms([]); return }
-    if (user.role === 'admin') { setMyComms('admin'); return }
-    api.getMe()
-      .then(me => setMyComms(me.communities || []))
-      .catch(() => setMyComms([]))
-  }, [user])
+    if (!needsRecheck || recheckedId === id) return
+    let alive = true
+    refresh()
+      .catch(() => {})
+      .finally(() => { if (alive) setRecheckedId(id) })
+    return () => { alive = false }
+  }, [id, needsRecheck, recheckedId, refresh])
 
   if (project === false) return <Navigate to="/discover" replace />
   if (!project) return <div style={{ maxWidth: 1100, margin: '0 auto', padding: 24, color: C.textMuted }}>Loading project...</div>
 
-  const isVerified = myComms === 'admin' || (Array.isArray(myComms) && myComms.some(c => c.projectId === id))
-
   const gatedTab = (tab) =>
-    myComms === null
+    needsRecheck && recheckedId !== id
       ? <div style={{ padding: 40, textAlign: 'center', color: C.textMuted }}>Loading...</div>
       : isVerified
         ? tab
