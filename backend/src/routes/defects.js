@@ -8,6 +8,7 @@ import { blockSensitiveContent } from '../middleware/sensitiveContent.js'
 import { badRequest, notFound, forbidden, conflict } from '../util/errors.js'
 import { recordAudit } from '../util/audit.js'
 import { wrap } from '../util/asyncHandler.js'
+import { attachmentsField, verifyAttachments, withAttachmentUrls, parseAttachments, attachmentKeys, deleteAttachmentObjects } from '../util/attachments.js'
 
 export const defectsRouter = Router({ mergeParams: true })
 
@@ -29,17 +30,6 @@ const updateSchema = z.object({
   { message: 'Please change the status, title or description before saving.' }
 )
 
-// Same shape as forum threads and chat messages — the frontend's shared
-// useAttachments hook produces it for all three.
-const attachmentSchema = z.object({
-  name: z.string(),
-  type: z.string(),
-  size: z.number(),
-  dataUrl: z.string()
-})
-
-const MAX_ATTACHMENTS_TOTAL_BYTES = 10 * 1024 * 1024
-
 const createSchema = z.object({
   title: z.string().trim().min(1, 'Title is required').max(200),
   description: z.string().trim().min(1, 'Description is required').max(4000),
@@ -50,7 +40,7 @@ const createSchema = z.object({
   // Photos of the defect. Not editable afterwards, matching forum threads: a
   // report whose photo was wrong should be deleted and re-filed rather than have
   // different evidence appear under a record others have already matched against.
-  attachments: z.array(attachmentSchema).max(6, 'You can attach up to 6 files.').optional().default([])
+  attachments: attachmentsField(6)
 })
 
 // Reporter name is joined rather than looked up per row — see the same note in
@@ -61,7 +51,7 @@ const DEFECT_SELECT = `
   LEFT JOIN users u ON u.id = d.reported_by_user_id
 `
 
-function serialize(row) {
+async function serialize(row) {
   return {
     id: row.id,
     title: row.title,
@@ -75,8 +65,9 @@ function serialize(row) {
     matchingUnits: row.matching_units,
     description: row.description,
     // NULL for every row created before 0005_defect_attachments.sql, and for
-    // seeded rows — the column can't carry a DEFAULT, so [] is applied here.
-    attachments: JSON.parse(row.attachments || '[]'),
+    // seeded rows — the column can't carry a DEFAULT, so parseAttachments reads
+    // that as [].
+    attachments: await withAttachmentUrls(parseAttachments(row.attachments)),
     editedAt: row.edited_at || null
   }
 }
@@ -85,29 +76,25 @@ const fetchDefect = (db, defectId) => db.get(`${DEFECT_SELECT} WHERE d.id = ?`, 
 
 defectsRouter.get('/', requireAuth, requireMembership, wrap(async (req, res) => {
   const rows = await getDb().all(`${DEFECT_SELECT} WHERE d.project_id = ? ORDER BY d.reported_at DESC`, [req.params.projectId])
-  res.json(rows.map(serialize))
+  res.json(await Promise.all(rows.map(serialize)))
 }))
 
 defectsRouter.post('/', requireAuth, requireMembership, validate(createSchema), blockSensitiveContent('title', 'description'), wrap(async (req, res, next) => {
   const db = getDb()
   const defectId = id('def')
   const reportedAt = new Date().toISOString().slice(0, 10)
-  const { title, description, category, block, floorRange, unit, attachments } = req.body
+  const { title, description, category, block, floorRange, unit } = req.body
 
-  // Same 10 MB ceiling as forum threads. The per-file limit is enforced by the
-  // frontend picker; this is the one that matters server-side, since attachments
-  // are base64 data URLs stored inline and express.json() caps a body at 15 MB.
-  const totalBytes = attachments.reduce((sum, a) => sum + (a.size || 0), 0)
-  if (totalBytes > MAX_ATTACHMENTS_TOTAL_BYTES) {
-    return next(badRequest('Your attachments add up to more than 10 MB. Please remove one or attach smaller files.'))
-  }
+  const checked = await verifyAttachments(req.body.attachments, { projectId: req.params.projectId, userId: req.user.id })
+  if (checked.error) return next(badRequest(checked.error))
+  const { attachments } = checked
 
   await db.run(`
     INSERT INTO defects (id, project_id, title, block, floor_range, unit, category, status, reported_by_user_id, reported_at, matching_units, description, attachments)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'Open', ?, ?, 1, ?, ?)
   `, [defectId, req.params.projectId, title, block, floorRange, unit, category, req.user.id, reportedAt, description, JSON.stringify(attachments)])
 
-  res.status(201).json(serialize(await fetchDefect(db, defectId)))
+  res.status(201).json(await serialize(await fetchDefect(db, defectId)))
 }))
 
 // Without the status half of this a defect stays 'Open' forever — the create
@@ -168,7 +155,7 @@ defectsRouter.patch('/:defectId', requireAuth, requireMembership, validate(updat
     })
   }
 
-  res.json(serialize(await fetchDefect(db, row.id)))
+  res.json(await serialize(await fetchDefect(db, row.id)))
 }))
 
 defectsRouter.delete('/:defectId', requireAuth, requireMembership, wrap(async (req, res, next) => {
@@ -178,6 +165,7 @@ defectsRouter.delete('/:defectId', requireAuth, requireMembership, wrap(async (r
   if (row.reported_by_user_id !== req.user.id && req.user.role !== 'admin') return next(forbidden('You can only delete defect reports you submitted.'))
 
   await db.run('DELETE FROM defects WHERE id = ?', [row.id])
+  await deleteAttachmentObjects(attachmentKeys(row.attachments))
 
   await recordAudit(db, {
     actorUserId: req.user.id,

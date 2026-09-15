@@ -8,6 +8,8 @@ import { blockSensitiveContent } from '../middleware/sensitiveContent.js'
 import { badRequest, notFound, forbidden, conflict } from '../util/errors.js'
 import { recordAudit } from '../util/audit.js'
 import { wrap } from '../util/asyncHandler.js'
+import { attachmentsField, verifyAttachments, withAttachmentUrls, parseAttachments, attachmentKeys, deleteAttachmentObjects } from '../util/attachments.js'
+import { pageLimit } from '../util/pagination.js'
 
 export const forumRouter = Router({ mergeParams: true })
 
@@ -15,13 +17,6 @@ const CATEGORIES = [
   'Defects & Repairs', 'Building Management', 'Security', 'Maintenance Fees',
   'Contractors & Services', 'Marketplace', 'Facilities', 'General Discussion'
 ]
-
-const attachmentSchema = z.object({
-  name: z.string(),
-  type: z.string(),
-  size: z.number(),
-  dataUrl: z.string()
-})
 
 const pollSchema = z.object({
   question: z.string().trim().min(1, 'Please enter a question for your poll.'),
@@ -34,15 +29,12 @@ const createThreadSchema = z.object({
   category: z.enum(CATEGORIES, { errorMap: () => ({ message: 'Please pick a category for your post.' }) }),
   title: z.string().trim().min(1, 'Please give your post a title.').max(200, 'Your title is too long — please keep it under 200 characters.'),
   body: z.string().trim().min(1, 'Please write something in your post.').max(5000, 'Your post is too long — please keep it under 5,000 characters.'),
-  attachments: z.array(attachmentSchema).max(6, 'You can attach up to 6 files.').optional().default([]),
+  attachments: attachmentsField(6),
   poll: pollSchema.nullable().optional()
 })
 
-function attachAttachmentsTotalSize(attachments) {
-  const MAX_TOTAL = 10 * 1024 * 1024
-  const total = attachments.reduce((sum, a) => sum + (a.size || 0), 0)
-  return total <= MAX_TOTAL
-}
+const PAGE_SIZE = 20
+const MAX_PAGE_SIZE = 50
 
 // Author details and the upvote tally come back with the thread row. Querying
 // per thread — plus one per poll option — would make listing a busy forum
@@ -100,7 +92,7 @@ async function loadPolls(db, threadIds) {
   return byThread
 }
 
-function serializeThread(row, poll = null) {
+async function serializeThread(row, poll = null) {
   return {
     id: row.id,
     category: row.category,
@@ -111,7 +103,7 @@ function serializeThread(row, poll = null) {
     replies: row.replies,
     createdAt: row.created_at,
     editedAt: row.edited_at || null,
-    attachments: JSON.parse(row.attachments),
+    attachments: await withAttachmentUrls(parseAttachments(row.attachments)),
     author: row.author_name
       ? { name: row.author_name, unit: row.author_unit || '-', tier: row.author_tier || 'Owner', verified: true }
       : null,
@@ -127,24 +119,57 @@ async function fetchThread(db, threadId) {
   return serializeThread(row, polls.get(row.id) || null)
 }
 
-forumRouter.get('/', requireAuth, requireMembership, wrap(async (req, res) => {
+// One page at a time, pinned first then newest: ?limit= (default 20, max 50),
+// ?before=<threadId> for the page after that thread, and ?category= to filter.
+// A page shorter than the limit is the last one.
+//
+// Sorted in SQL now, because the order has to agree with the cursor. created_at
+// compares as text, which is chronological for the toISOString() values the API
+// writes; only the demo seed's +08:00 timestamps can misorder against a post
+// from the same day.
+forumRouter.get('/', requireAuth, requireMembership, wrap(async (req, res, next) => {
   const db = getDb()
-  const rows = await db.all(`${THREAD_SELECT} WHERE t.project_id = ?`, [req.params.projectId])
-  rows.sort((a, b) => {
-    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
-    return new Date(b.created_at) - new Date(a.created_at)
-  })
+  const { projectId } = req.params
+  const { category, before } = req.query
+  const limit = pageLimit(req.query.limit, PAGE_SIZE, MAX_PAGE_SIZE)
+
+  let where = 'WHERE t.project_id = ?'
+  const params = [projectId]
+
+  if (category !== undefined) {
+    if (!CATEGORIES.includes(category)) return next(badRequest("That forum category doesn't exist. Please pick one from the list."))
+    where += ' AND t.category = ?'
+    params.push(category)
+  }
+
+  if (before !== undefined) {
+    const cursor = typeof before === 'string'
+      ? await db.get('SELECT id, pinned, created_at FROM forum_threads WHERE id = ? AND project_id = ?', [before, projectId])
+      : null
+    if (!cursor) return next(badRequest('That post is no longer available. Please reload the forum.'))
+    where += ' AND (t.pinned < ? OR (t.pinned = ? AND (t.created_at < ? OR (t.created_at = ? AND t.id < ?))))'
+    params.push(cursor.pinned, cursor.pinned, cursor.created_at, cursor.created_at, cursor.id)
+  }
+
+  // allDynamic rather than all: the SQL's shape varies with the filters above
+  // (see db/index.js).
+  const rows = await db.allDynamic(
+    `${THREAD_SELECT} ${where} ORDER BY t.pinned DESC, t.created_at DESC, t.id DESC LIMIT ?`,
+    [...params, limit]
+  )
 
   const polls = await loadPolls(db, rows.map(r => r.id))
-  res.json(rows.map(r => serializeThread(r, polls.get(r.id) || null)))
+  res.json(await Promise.all(rows.map(r => serializeThread(r, polls.get(r.id) || null))))
 }))
 
 forumRouter.post('/', requireAuth, requireMembership, validate(createThreadSchema), blockSensitiveContent('title', 'body'), wrap(async (req, res, next) => {
-  const { category, title, body, attachments, poll } = req.body
-  if (!attachAttachmentsTotalSize(attachments)) return next(badRequest('Your attachments add up to more than 10 MB. Please remove one or attach smaller files.'))
+  const { category, title, body, poll } = req.body
+  const projectId = req.params.projectId
+  const checked = await verifyAttachments(req.body.attachments, { projectId, userId: req.user.id })
+  if (checked.error) return next(badRequest(checked.error))
+  const { attachments } = checked
 
   const db = getDb()
-  const projectId = req.params.projectId
   const threadId = id('thr')
   const createdAt = new Date().toISOString()
 
@@ -257,6 +282,7 @@ forumRouter.delete('/:threadId', requireAuth, requireMembership, wrap(async (req
     await tx.run('DELETE FROM forum_upvotes WHERE thread_id = ?', [thread.id])
     await tx.run('DELETE FROM forum_threads WHERE id = ?', [thread.id])
   })
+  await deleteAttachmentObjects(attachmentKeys(thread.attachments))
 
   await recordAudit(db, {
     actorUserId: req.user.id,

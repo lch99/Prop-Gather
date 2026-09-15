@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
 import { C, card, button, badge } from '../../theme'
 import { useAuth } from '../../auth'
@@ -12,6 +12,10 @@ const categories = [
   'Contractors & Services', 'Marketplace', 'Facilities', 'General Discussion'
 ]
 
+// A page at a time — the forum used to load every thread a community had ever
+// posted each time it was opened. More load when the resident asks for them.
+const PAGE_SIZE = 20
+
 function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime()
   const hours = Math.floor(diff / 3600000)
@@ -23,20 +27,71 @@ function timeAgo(dateStr) {
 export default function ForumTab({ projectId }) {
   const { user } = useAuth()
   const [threads, setThreads] = useState([])
+  const [hasMore, setHasMore] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [category, setCategory] = useState('All')
+  // Bumped to re-read the first page, e.g. after posting.
+  const [reloadKey, setReloadKey] = useState(0)
   const [showNew, setShowNew] = useState(false)
   const [newThread, setNewThread] = useState({ category: categories[0], title: '', body: '' })
   const [poll, setPoll] = useState(null) // null = no poll; { question, options: [str, ...] }
+  const [posting, setPosting] = useState(false)
+  const [postError, setPostError] = useState('')
   const [editingId, setEditingId] = useState(null) // thread id currently open in the inline editor
   const [editDraft, setEditDraft] = useState({ title: '', body: '' })
   const [editError, setEditError] = useState('')
   const { attachments, addFiles, removeAttachment, error: uploadError, reset: resetAttachments } = useAttachments()
 
-  const load = () => api.getForum(projectId).then(setThreads)
+  // Which list is on screen. A page that arrives after the category changed, or
+  // after the first page was re-read, belongs to a list that is gone — dropped.
+  const listVersion = useRef(0)
 
-  useEffect(() => { load() }, [projectId])
+  const fetchPage = (before) => api.getForum(projectId, {
+    category: category === 'All' ? undefined : category,
+    before,
+    limit: PAGE_SIZE
+  })
 
-  const filtered = category === 'All' ? threads : threads.filter(t => t.category === category)
+  useEffect(() => {
+    const version = ++listVersion.current
+    setLoading(true)
+    setLoadError('')
+    fetchPage()
+      .then(page => {
+        if (version !== listVersion.current) return
+        setThreads(page)
+        setHasMore(page.length === PAGE_SIZE)
+      })
+      .catch(err => {
+        if (version !== listVersion.current) return
+        setThreads([])
+        setHasMore(false)
+        setLoadError(err.message)
+      })
+      .finally(() => {
+        if (version === listVersion.current) setLoading(false)
+      })
+  }, [projectId, category, reloadKey])
+
+  const loadMore = async () => {
+    const last = threads[threads.length - 1]
+    if (!last || loadingMore) return
+    const version = listVersion.current
+    setLoadingMore(true)
+    setLoadError('')
+    try {
+      const page = await fetchPage(last.id)
+      if (version !== listVersion.current) return
+      setThreads(ts => [...ts, ...page])
+      setHasMore(page.length === PAGE_SIZE)
+    } catch (err) {
+      if (version === listVersion.current) setLoadError(err.message)
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   const blockedByPii = hasSensitiveContent(newThread.title, newThread.body)
   const editBlocked = hasSensitiveContent(editDraft.title, editDraft.body)
@@ -69,10 +124,12 @@ export default function ForumTab({ projectId }) {
     if (!editDraft.title.trim() || !editDraft.body.trim()) return
     if (editBlocked) return
     try {
-      await api.editThread(projectId, threadId, editDraft)
+      const updated = await api.editThread(projectId, threadId, editDraft)
+      // Replaced in place rather than re-reading the list, which would drop every
+      // page loaded past the first.
+      setThreads(ts => ts.map(t => t.id === updated.id ? updated : t))
       setEditingId(null)
       setEditError('')
-      load()
     } catch (err) {
       setEditError(err.message)
     }
@@ -95,7 +152,7 @@ export default function ForumTab({ projectId }) {
   const removePollOption = (i) => setPoll(p => ({ ...p, options: p.options.filter((_, idx) => idx !== i) }))
 
   const submit = async () => {
-    if (!newThread.title || !newThread.body) return
+    if (!newThread.title || !newThread.body || posting) return
     if (hasSensitiveContent(newThread.title, newThread.body)) return
     let pollPayload = null
     if (poll) {
@@ -104,12 +161,23 @@ export default function ForumTab({ projectId }) {
         pollPayload = { question: poll.question.trim(), options }
       }
     }
-    await api.createThread(projectId, { ...newThread, attachments, poll: pollPayload })
+    setPosting(true)
+    setPostError('')
+    try {
+      await api.createThread(projectId, { ...newThread, attachments, poll: pollPayload })
+    } catch (err) {
+      // Photos upload before the post is created, so this is also where a failed
+      // upload or a refused file surfaces. The form stays as it was.
+      setPostError(err.message)
+      return
+    } finally {
+      setPosting(false)
+    }
     setNewThread({ category: categories[0], title: '', body: '' })
     setPoll(null)
     resetAttachments()
     setShowNew(false)
-    load()
+    setReloadKey(k => k + 1)
   }
 
   return (
@@ -137,7 +205,11 @@ export default function ForumTab({ projectId }) {
 
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
-          <div style={{ color: C.textMuted, fontSize: 14 }}>{filtered.length} thread{filtered.length !== 1 ? 's' : ''}</div>
+          <div style={{ color: C.textMuted, fontSize: 14 }}>
+            {loading
+              ? 'Loading posts…'
+              : `${threads.length}${hasMore ? '+' : ''} thread${threads.length === 1 && !hasMore ? '' : 's'}`}
+          </div>
           <button style={button('primary')} onClick={() => setShowNew(s => !s)}>+ New thread</button>
         </div>
 
@@ -185,14 +257,23 @@ export default function ForumTab({ projectId }) {
                 </button>
               )}
               <button
-                style={{ ...button('primary'), ...(blockedByPii ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+                style={{
+                  ...button('primary'),
+                  ...(blockedByPii ? { opacity: 0.5, cursor: 'not-allowed' } : posting ? { opacity: 0.7, cursor: 'wait' } : {})
+                }}
                 onClick={submit}
-                disabled={blockedByPii}
+                disabled={blockedByPii || posting}
               >
-                Post
+                {posting ? (attachments.length ? 'Uploading…' : 'Posting…') : 'Post'}
               </button>
             </div>
             <div style={{ fontSize: 12, color: C.textFaint, marginTop: -4 }}>Up to 6 files · 5 MB per file · 10 MB total</div>
+
+            {postError && (
+              <div role="alert" style={{ fontSize: 13, color: C.danger, background: C.dangerBg, padding: '8px 10px', borderRadius: C.radiusSm }}>
+                {postError}
+              </div>
+            )}
 
             {poll && (
               <div style={{ border: `1px solid ${C.border}`, borderRadius: C.radiusSm, padding: 12, display: 'grid', gap: 8, background: C.bg }}>
@@ -239,8 +320,14 @@ export default function ForumTab({ projectId }) {
           </div>
         )}
 
-        <div style={{ display: 'grid', gap: 12 }}>
-          {filtered.map(t => (
+        {loadError && (
+          <div role="alert" style={{ ...card, padding: 14, marginBottom: 12, color: C.danger, fontSize: 14 }}>
+            {loadError}
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gap: 12, opacity: loading && threads.length > 0 ? 0.5 : 1 }}>
+          {threads.map(t => (
             <div key={t.id} style={{ ...card, padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -329,8 +416,17 @@ export default function ForumTab({ projectId }) {
               </div>
             </div>
           ))}
-          {filtered.length === 0 && (
+          {!loading && !loadError && threads.length === 0 && (
             <div style={{ ...card, padding: 24, textAlign: 'center', color: C.textMuted }}>No threads in this category yet.</div>
+          )}
+          {hasMore && (
+            <button
+              style={{ ...button('outline'), justifySelf: 'center' }}
+              onClick={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? 'Loading…' : 'Load more threads'}
+            </button>
           )}
         </div>
       </div>

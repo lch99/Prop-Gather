@@ -17,14 +17,34 @@ import { request, uploadToStorage } from './apiClient'
 
 export { ApiError, mediaUrl } from './apiClient'
 
-// useAttachments (components/Attachments.jsx) hands us `{ name, type, size,
-// dataUrl }` rather than the original File, because the demo needed something
-// serialisable. Turning the data URL back into bytes here keeps that shared
-// picker unchanged for the one flow that uploads to storage instead of posting
-// the payload inline.
-async function dataUrlToBlob(dataUrl) {
-  const res = await fetch(dataUrl)
-  return res.blob()
+// Files picked with useAttachments (components/Attachments.jsx) arrive as
+// `{ name, type, size, file }`. Posts, chat messages, defect reports and
+// references upload each one straight to storage and send only the key it was
+// stored under — see backend/src/util/attachments.js for why files no longer
+// travel inside the request.
+//
+// Remembered per File, so a submit that fails after its uploads finished (a
+// validation error, a dropped connection) doesn't upload the same photos again
+// when the resident tries once more.
+const uploadedKeys = new WeakMap()
+
+function uploadAttachments(projectId, attachments = []) {
+  return Promise.all(attachments.map(async ({ name, type, size, file }) => {
+    let upload = uploadedKeys.get(file)
+    if (!upload) {
+      upload = (async () => {
+        const { key, uploadUrl } = await request(`/projects/${projectId}/attachments/upload-url`, {
+          method: 'POST',
+          body: { fileName: name, fileType: type, fileSize: size }
+        })
+        await uploadToStorage(uploadUrl, file, type)
+        return key
+      })()
+      uploadedKeys.set(file, upload)
+      upload.catch(() => uploadedKeys.delete(file))
+    }
+    return { name, type, size, key: await upload }
+  }))
 }
 
 export const api = {
@@ -101,10 +121,7 @@ export const api = {
   // Admin-only on the server, like createProject. `role` is the same UX
   // short-circuit used there, never the access boundary.
   //
-  // Takes a real File rather than the `{ dataUrl }` shape useAttachments
-  // produces: a cover photo straight off a phone is several megabytes, and
-  // base64-ing it into a string only to decode it again before upload is a
-  // detour these bytes don't need to take.
+  // Takes the File itself, from CommunityPhotosEditor's own picker.
   uploadProjectImage: async (projectId, kind, file, role) => {
     if (role && role !== 'admin') throw new Error('Only platform admins can change a community photo.')
 
@@ -138,8 +155,7 @@ export const api = {
       body: { fileName: documentFile.name, fileType: documentFile.type, fileSize: documentFile.size }
     })
 
-    const blob = await dataUrlToBlob(documentFile.dataUrl)
-    await uploadToStorage(uploadUrl, blob, documentFile.type)
+    await uploadToStorage(uploadUrl, documentFile.file, documentFile.type)
 
     return request('/applications', {
       method: 'POST',
@@ -182,16 +198,19 @@ export const api = {
   },
 
   // ── Forum ─────────────────────────────────────────────────────────────────
-  getForum: (projectId) => request(`/projects/${projectId}/forum`),
+  // One page, pinned first then newest. Pass the last thread's id as `before`
+  // for the next page; a page shorter than `limit` is the last one.
+  getForum: (projectId, { category, before, limit } = {}) =>
+    request(`/projects/${projectId}/forum`, { query: { category, before, limit } }),
 
-  createThread: (projectId, data) =>
+  createThread: async (projectId, data) =>
     request(`/projects/${projectId}/forum`, {
       method: 'POST',
       body: {
         category: data.category,
         title: data.title,
         body: data.body,
-        attachments: data.attachments || [],
+        attachments: await uploadAttachments(projectId, data.attachments),
         poll: data.poll || null
       }
     }),
@@ -214,10 +233,16 @@ export const api = {
   // ── Chat ──────────────────────────────────────────────────────────────────
   getChatChannels: (projectId) => request(`/projects/${projectId}/chat/channels`),
 
-  getChatMessages: (projectId, channel) => request(`/projects/${projectId}/chat/${channel}/messages`),
+  // The newest page of a channel, oldest first. Pass the first message's id as
+  // `before` for the page above it; a page shorter than `limit` is the start.
+  getChatMessages: (projectId, channel, { before, limit } = {}) =>
+    request(`/projects/${projectId}/chat/${channel}/messages`, { query: { before, limit } }),
 
-  sendChatMessage: (projectId, channel, text, attachments = []) =>
-    request(`/projects/${projectId}/chat/${channel}/messages`, { method: 'POST', body: { text, attachments } }),
+  sendChatMessage: async (projectId, channel, text, attachments = []) =>
+    request(`/projects/${projectId}/chat/${channel}/messages`, {
+      method: 'POST',
+      body: { text, attachments: await uploadAttachments(projectId, attachments) }
+    }),
 
   editChatMessage: (projectId, channel, messageId, text) =>
     request(`/projects/${projectId}/chat/${channel}/messages/${messageId}`, { method: 'PATCH', body: { text } }),
@@ -250,7 +275,7 @@ export const api = {
   // ── Defects ───────────────────────────────────────────────────────────────
   getDefects: (projectId) => request(`/projects/${projectId}/defects`),
 
-  createDefect: (projectId, data) =>
+  createDefect: async (projectId, data) =>
     request(`/projects/${projectId}/defects`, {
       method: 'POST',
       body: {
@@ -260,7 +285,7 @@ export const api = {
         block: data.block || '-',
         floorRange: data.floorRange || '-',
         unit: data.unit || '-',
-        attachments: data.attachments || []
+        attachments: await uploadAttachments(projectId, data.attachments)
       }
     }),
 
@@ -270,8 +295,15 @@ export const api = {
   // ── References ────────────────────────────────────────────────────────────
   getReferences: (projectId) => request(`/projects/${projectId}/references`),
 
+  // Admin-only: every community's reference count, progress-update count and
+  // newest progress update, in one request. See getShareStats for `role`.
+  getReferenceSummary: async (role) => {
+    if (role && role !== 'admin') return []
+    return request('/projects/reference-summary')
+  },
+
   // Admin-only. `uploadedBy` is set from the acting admin's name server-side.
-  addReference: (projectId, data) =>
+  addReference: async (projectId, data) =>
     request(`/projects/${projectId}/references`, {
       method: 'POST',
       body: {
@@ -280,7 +312,7 @@ export const api = {
         description: data.description || '',
         date: data.date,
         progress: data.progress,
-        attachments: data.attachments || []
+        attachments: await uploadAttachments(projectId, data.attachments)
       }
     }),
 

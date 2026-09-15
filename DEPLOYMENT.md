@@ -594,7 +594,7 @@ server {
     listen 80;
     server_name api.propgather.com;      # your API hostname
 
-    client_max_body_size 16m;            # matches express.json's 15mb limit
+    client_max_body_size 16m;            # well above express.json's 1mb limit
 
     location / {
         proxy_pass http://127.0.0.1:4000;
@@ -615,8 +615,9 @@ sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d api.propgather.com     # also sets up auto-renewal
 ```
 
-Documents upload browser → R2 directly, so they don't pass through nginx; the
-16m limit only needs to cover JSON request bodies.
+Files — ownership documents, community photos and post attachments — upload
+browser → R2 directly, so they never pass through nginx; this limit only needs
+to cover JSON request bodies, which Express caps at 1 MB anyway.
 
 ### 2.8a Clean URLs — the SPA fallback
 
@@ -637,6 +638,16 @@ server {
     index index.html;
 
     client_max_body_size 16m;
+
+    # Compress text responses. nginx's stock config gzips text/html and nothing
+    # else, so without this the JavaScript, the CSS and every /api/ response go
+    # out uncompressed. Measured on the live site on 2026-09-13: the 360 KB
+    # bundle was sent whole instead of ~104 KB. Covers the proxied /api/ too.
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_min_length 1024;
+    gzip_types text/css text/plain application/javascript application/json application/xml image/svg+xml;
 
     # Hashed assets are immutable; index.html must never be cached, or a
     # deploy leaves browsers loading a bundle that no longer exists.
@@ -682,6 +693,24 @@ curl -s https://propgather.com.my/robots.txt
 
 Then open `https://propgather.com.my/project/<some-id>` and **reload on that
 URL**. That reload is the whole test.
+
+Then check that compression and caching actually took effect. Both fail
+silently — the site just stays slow:
+
+```bash
+JS=$(curl -s https://propgather.com.my/ | grep -o '/assets/index-[^"]*\.js' | head -1)
+curl -s -o /dev/null -D - -H 'Accept-Encoding: gzip' "https://propgather.com.my$JS" \
+  | grep -iE '^(content-encoding|cache-control)'
+# content-encoding: gzip
+# cache-control: max-age=31536000
+# cache-control: public, immutable
+```
+
+No `content-encoding` line means the `gzip_types` line isn't active. No
+`cache-control` lines means the `location /assets/` block is missing from the
+server block that actually answers HTTPS — `sudo nginx -T` prints the config
+nginx is really running. That block was added to this guide on 2026-08-27, so a
+server configured before then won't have it.
 
 ### 2.8b Share links — `/s/:id` (optional, but it is what makes shares travel)
 
@@ -865,6 +894,14 @@ contains one. To apply migrations without restarting the service:
 ```bash
 sudo -u propgather env $(grep -v '^#' /etc/propgather.env | xargs) npm run migrate
 ```
+
+**Frontend.** Every page is its own JavaScript chunk, fetched the first time
+it's opened. Copy a new `dist/` into `/var/www/propgather` *over* the old one
+rather than emptying the directory first, and leave the previous build's
+`assets/` files in place for a day or so (prune old ones now and then): a
+resident who already has the site open is still running the old build, and its
+chunks are what their next tap asks for. If a chunk has gone, the app reloads
+itself onto the new build — keeping the old files just saves them that reload.
 
 ### 2.13 Rollback
 

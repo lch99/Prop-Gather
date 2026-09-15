@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import request from 'supertest'
 import { freshApp, authed, login, RESIDENT, ADMIN } from './helpers.js'
 
 let app
@@ -94,5 +95,40 @@ describe('DELETE /api/projects/:projectId/references/:refId', () => {
   it('404s for an unknown reference', async () => {
     const res = await authed(app, adminToken).delete('/api/projects/p1/references/ref-nope')
     expect(res.status).toBe(404)
+  })
+})
+
+describe('GET /api/projects/reference-summary', () => {
+  it('rejects an unauthenticated request', async () => {
+    const res = await request(app).get('/api/projects/reference-summary')
+    expect(res.status).toBe(401)
+  })
+
+  it('is admin-only', async () => {
+    const res = await authed(app, residentToken).get('/api/projects/reference-summary')
+    expect(res.status).toBe(403)
+  })
+
+  it('agrees with the full list it replaces, and picks the newest progress update', async () => {
+    const older = await authed(app, adminToken).post('/api/projects/p1/references')
+      .send({ type: 'Building Progress', title: 'Older progress', date: '2000-01-01', progress: 10 })
+    const newest = await authed(app, adminToken).post('/api/projects/p1/references')
+      .send({ type: 'Building Progress', title: 'Newest progress', date: '2999-12-31', progress: 80 })
+    expect(older.status).toBe(201)
+    expect(newest.status).toBe(201)
+
+    const res = await authed(app, adminToken).get('/api/projects/reference-summary')
+    expect(res.status).toBe(200)
+
+    const full = await authed(app, adminToken).get('/api/projects/p1/references')
+    const p1 = res.body.find(s => s.projectId === 'p1')
+    expect(p1.references).toBe(full.body.length)
+    expect(p1.progressUpdates).toBe(full.body.filter(r => r.type === 'Building Progress').length)
+    expect(p1.latestProgress).toMatchObject({ id: newest.body.id, title: 'Newest progress', progress: 80 })
+  })
+
+  it('is not shadowed by GET /api/projects/:id', async () => {
+    const res = await authed(app, adminToken).get('/api/projects/reference-summary')
+    expect(Array.isArray(res.body)).toBe(true)
   })
 })

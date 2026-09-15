@@ -8,6 +8,8 @@ import { blockSensitiveContent } from '../middleware/sensitiveContent.js'
 import { badRequest, notFound, forbidden, conflict } from '../util/errors.js'
 import { recordAudit } from '../util/audit.js'
 import { wrap } from '../util/asyncHandler.js'
+import { attachmentsField, verifyAttachments, withAttachmentUrls, parseAttachments, attachmentKeys, deleteAttachmentObjects } from '../util/attachments.js'
+import { pageLimit } from '../util/pagination.js'
 
 export const chatRouter = Router({ mergeParams: true })
 
@@ -22,17 +24,13 @@ function requireValidChannel(req, _res, next) {
   next()
 }
 
-const attachmentSchema = z.object({
-  name: z.string(),
-  type: z.string(),
-  size: z.number(),
-  dataUrl: z.string()
-})
-
 const sendSchema = z.object({
   text: z.string().trim().min(1, 'Message cannot be empty').max(2000),
-  attachments: z.array(attachmentSchema).max(6).optional().default([])
+  attachments: attachmentsField(6)
 })
+
+const PAGE_SIZE = 50
+const MAX_PAGE_SIZE = 100
 
 // Author details are joined in rather than fetched per message: a lookup per
 // row would be a network round trip, turning one request on a busy channel into
@@ -45,7 +43,7 @@ const MESSAGE_SELECT = `
     ON cm.user_id = m.sender_user_id AND cm.project_id = m.project_id
 `
 
-function serializeMessage(row) {
+async function serializeMessage(row) {
   return {
     id: row.id,
     sender: row.sender_name || 'Unknown',
@@ -53,7 +51,7 @@ function serializeMessage(row) {
     tier: row.sender_tier || 'Owner',
     verified: true,
     text: row.text,
-    attachments: JSON.parse(row.attachments),
+    attachments: await withAttachmentUrls(parseAttachments(row.attachments)),
     editedAt: row.edited_at || null,
     time: new Date(row.created_at).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false })
   }
@@ -61,17 +59,45 @@ function serializeMessage(row) {
 
 const fetchMessage = (db, messageId) => db.get(`${MESSAGE_SELECT} WHERE m.id = ?`, [messageId])
 
-chatRouter.get('/:channel/messages', requireAuth, requireMembership, requireValidChannel, wrap(async (req, res) => {
-  const rows = await getDb().all(
-    `${MESSAGE_SELECT} WHERE m.project_id = ? AND m.channel = ? ORDER BY m.created_at`,
-    [req.params.projectId, req.params.channel]
+// The newest page of a channel, oldest first so it renders top to bottom:
+// ?limit= (default 50, max 100), and ?before=<messageId> for the page of
+// messages older than that one. A page shorter than the limit means the start of
+// the channel has been reached. This used to return the channel's entire
+// history on every open.
+chatRouter.get('/:channel/messages', requireAuth, requireMembership, requireValidChannel, wrap(async (req, res, next) => {
+  const db = getDb()
+  const { projectId, channel } = req.params
+  const { before } = req.query
+  const limit = pageLimit(req.query.limit, PAGE_SIZE, MAX_PAGE_SIZE)
+
+  let where = 'WHERE m.project_id = ? AND m.channel = ?'
+  const params = [projectId, channel]
+
+  if (before !== undefined) {
+    const cursor = typeof before === 'string'
+      ? await db.get('SELECT id, created_at FROM chat_messages WHERE id = ? AND project_id = ? AND channel = ?', [before, projectId, channel])
+      : null
+    if (!cursor) return next(badRequest('That message is no longer available. Please reload the channel.'))
+    where += ' AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))'
+    params.push(cursor.created_at, cursor.created_at, cursor.id)
+  }
+
+  // allDynamic rather than all: the SQL's shape depends on whether there is a
+  // cursor (see db/index.js).
+  const rows = await db.allDynamic(
+    `${MESSAGE_SELECT} ${where} ORDER BY m.created_at DESC, m.id DESC LIMIT ?`,
+    [...params, limit]
   )
-  res.json(rows.map(serializeMessage))
+  rows.reverse()
+  res.json(await Promise.all(rows.map(serializeMessage)))
 }))
 
-chatRouter.post('/:channel/messages', requireAuth, requireMembership, requireValidChannel, validate(sendSchema), blockSensitiveContent('text'), wrap(async (req, res) => {
+chatRouter.post('/:channel/messages', requireAuth, requireMembership, requireValidChannel, validate(sendSchema), blockSensitiveContent('text'), wrap(async (req, res, next) => {
   const db = getDb()
-  const { text, attachments } = req.body
+  const { text } = req.body
+  const checked = await verifyAttachments(req.body.attachments, { projectId: req.params.projectId, userId: req.user.id })
+  if (checked.error) return next(badRequest(checked.error))
+  const { attachments } = checked
   const msgId = id('msg')
   const createdAt = new Date().toISOString()
 
@@ -80,7 +106,7 @@ chatRouter.post('/:channel/messages', requireAuth, requireMembership, requireVal
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `, [msgId, req.params.projectId, req.params.channel, req.user.id, text, JSON.stringify(attachments), createdAt])
 
-  res.status(201).json(serializeMessage(await fetchMessage(db, msgId)))
+  res.status(201).json(await serializeMessage(await fetchMessage(db, msgId)))
 }))
 
 const editSchema = z.object({
@@ -112,7 +138,7 @@ chatRouter.patch('/:channel/messages/:messageId', requireAuth, requireMembership
     metadata: { channel: req.params.channel }
   })
 
-  res.json(serializeMessage(await fetchMessage(db, msg.id)))
+  res.json(await serializeMessage(await fetchMessage(db, msg.id)))
 }))
 
 // Lets a resident remove their own message (or an admin remove any message) —
@@ -127,6 +153,7 @@ chatRouter.delete('/:channel/messages/:messageId', requireAuth, requireMembershi
   if (msg.sender_user_id !== req.user.id && req.user.role !== 'admin') return next(forbidden('You can only delete your own messages.'))
 
   await db.run('DELETE FROM chat_messages WHERE id = ?', [msg.id])
+  await deleteAttachmentObjects(attachmentKeys(msg.attachments))
 
   await recordAudit(db, {
     actorUserId: req.user.id,

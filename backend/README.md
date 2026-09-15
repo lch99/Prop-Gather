@@ -153,11 +153,54 @@ Only admins can write these (`requireRole('admin')`), the same rule as creating
 a community — a community's photos are its shared identity in the directory,
 not something one of its residents should be able to change for everyone.
 
+### Post attachments
+
+Photos and files on forum posts, chat messages, defect reports and references:
+the same bucket again, a third prefix (`community-attachments/`), and a third
+set of rules. See `src/util/attachments.js` and `src/routes/attachments.js`.
+
+These used to be base64 data URLs inside the JSON body, stored in a `TEXT`
+column. MySQL rejected anything over 64 KB — an ordinary phone photo — and
+whatever did fit was sent back inside every list response, so opening a forum
+meant downloading every photo ever posted to it.
+
+1. Client calls `POST /api/projects/:projectId/attachments/upload-url` with
+   `{fileName, fileType, fileSize}` → `{key, uploadUrl}`. Members only (admins
+   pass, as everywhere); photos, PDF and Word documents; 5 MB per file.
+2. Browser `PUT`s the bytes straight to `uploadUrl`.
+3. The post, message, report or reference is created with `attachments:
+   [{name, type, size, key}]`. Every key must start with
+   `community-attachments/<projectId>/<the caller's user id>/` — anything else is
+   refused before storage is touched, because step 4 signs a URL for whatever
+   key a row holds and the bucket also holds ownership documents. Each object is
+   then `HeadObject`ed, and the size storage reports is the one stored (5 MB per
+   file, 10 MB in total).
+4. Reads return each file as `{name, type, size, dataUrl}`, where `dataUrl` is a
+   presigned `GET`. It is signed against the start of the current hour with a
+   two-hour lifetime, so every read within the hour returns the *same* URL and
+   the browser's cache works — a fresh signature per request would make every
+   visit download every photo again.
+5. Deleting the content deletes its files (best-effort), and so does account
+   erasure (`DELETE /api/auth/users/:id`). There is no lifecycle rule over this
+   prefix, and there must not be one: a file lives as long as its post.
+
+Rows written before this change still hold inline data URLs, and reads pass
+them through untouched. One known gap: a file uploaded in step 2 whose post is
+then never created (the request failed and was never retried) is referenced by
+no row, so neither deletion nor erasure can find it. The frontend reuses an
+already-uploaded file when a failed submit is retried, which keeps this rare.
+
+Lists that carry attachments are paginated too: `GET .../forum` (`?limit=`,
+default 20, `?before=<threadId>`, `?category=`) and `GET
+.../chat/:channel/messages` (`?limit=`, default 50, `?before=<messageId>`). A
+page shorter than the limit is the last one.
+
 **Required env vars** (`.env.example`): `AWS_REGION`, `AWS_S3_BUCKET`,
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, plus `S3_ENDPOINT` when the
 bucket lives on a non-AWS S3-compatible provider (this project uses
-**Cloudflare R2**). Without these, anything touching `/api/applications` that
-needs storage will 500 — there's no in-memory/local-disk fallback by design,
+**Cloudflare R2**). Without these, anything that needs storage — applications,
+community photos, post attachments — will 500; there's no in-memory/local-disk
+fallback by design,
 so a misconfigured deployment fails loudly instead of silently writing files
 somewhere that won't survive a redeploy.
 

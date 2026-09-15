@@ -9,6 +9,8 @@ import { toProject } from '../util/serialize.js'
 import { badRequest, conflict, notFound } from '../util/errors.js'
 import { COMMUNITY_IMAGE_PREFIX, buildCommunityImageKey, createUploadUrl, createDownloadUrl, headObject, deleteObject } from '../util/s3.js'
 import { recordAudit } from '../util/audit.js'
+import { serializeReference } from '../util/attachments.js'
+import { PROGRESS_TYPE } from './references.js'
 import { wrap } from '../util/asyncHandler.js'
 
 export const projectsRouter = Router()
@@ -80,6 +82,41 @@ projectsRouter.get('/share-stats', requireAuth, requireRole('admin'), wrap(async
   }
 
   res.json([...byProject.values()].sort((a, b) => b.shares - a.shares || b.visits - a.visits))
+}))
+
+// The Overview dashboard's reference numbers for every community, in one
+// request. The page used to fetch each community's full reference list — one
+// request per community on every visit, growing with the directory — only to
+// count them and pick out the newest progress update. Admin-only, and declared
+// before '/:id', for the same reasons as share-stats above.
+projectsRouter.get('/reference-summary', requireAuth, requireRole('admin'), wrap(async (_req, res) => {
+  const db = getDb()
+  const counts = await db.all(`
+    SELECT project_id, COUNT(*) AS total, SUM(type = ?) AS progress
+      FROM references_
+     GROUP BY project_id
+  `, [PROGRESS_TYPE])
+
+  // Newest by date, the order GET .../references lists them in; id breaks a tie
+  // so the pick is stable.
+  const latestRows = await db.all(`
+    SELECT * FROM (
+      SELECT r.*, ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY date DESC, id DESC) AS rn
+        FROM references_ r
+       WHERE type = ?
+    ) ranked
+     WHERE rn = 1
+  `, [PROGRESS_TYPE])
+  const latest = new Map(await Promise.all(
+    latestRows.map(async row => [row.project_id, await serializeReference(row)])
+  ))
+
+  res.json(counts.map(c => ({
+    projectId: c.project_id,
+    references: Number(c.total),
+    progressUpdates: Number(c.progress),
+    latestProgress: latest.get(c.project_id) || null
+  })))
 }))
 
 projectsRouter.get('/:id', wrap(async (req, res, next) => {

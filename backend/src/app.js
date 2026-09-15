@@ -17,13 +17,17 @@ import { documentsRouter } from './routes/documents.js'
 import { referencesRouter } from './routes/references.js'
 import { feesRouter } from './routes/fees.js'
 import { sharePreviewRouter } from './routes/sharePreview.js'
+import { attachmentsRouter } from './routes/attachments.js'
 
 export function createApp() {
   const app = express()
 
   // Restricted to CORS_ORIGINS (dev origins when unset) — see middleware/cors.js.
   app.use(corsMiddleware())
-  app.use(express.json({ limit: '15mb' }))
+  // Request bodies are JSON and nothing else. Files — ownership documents,
+  // community photos and post attachments alike — go browser → object storage
+  // directly, so nothing legitimate comes close to this.
+  app.use(express.json({ limit: '1mb' }))
   app.use(optionalAuth)
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }))
@@ -51,6 +55,8 @@ export function createApp() {
   app.use('/api/projects/:projectId/documents', requireProjectExists, documentsRouter)
   app.use('/api/projects/:projectId/references', requireProjectExists, referencesRouter)
   app.use('/api/projects/:projectId/fees', requireProjectExists, feesRouter)
+  // Step 1 of attaching a file to any of the above — see util/attachments.js.
+  app.use('/api/projects/:projectId/attachments', requireProjectExists, attachmentsRouter)
 
   app.use('/api', (_req, res) => res.status(404).json({ error: "We couldn't find that page or action." }))
 
@@ -66,7 +72,12 @@ export function createApp() {
     res.status(status).json({
       error: status >= 500
         ? 'Something went wrong on our end. Please try again in a moment.'
-        : (err.message || 'Something went wrong. Please try again.'),
+        // express.json's own wording ("request entity too large") would reach a
+        // resident verbatim. In practice this is a tab still running a build that
+        // sent files inside the request body, which a reload fixes.
+        : err.type === 'entity.too.large'
+          ? 'That was too much to send in one go. Please reload the page and try again.'
+          : (err.message || 'Something went wrong. Please try again.'),
       ...(err.details ? { details: err.details } : {})
     })
   })

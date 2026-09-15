@@ -22,6 +22,7 @@ export default function AdminReferencesPage() {
   const [form, setForm] = useState(blankForm())
   const [saving, setSaving] = useState(false)
   const [justPublished, setJustPublished] = useState(false)
+  const [publishError, setPublishError] = useState('')
   const { attachments, addFiles, removeAttachment, error: uploadError, reset } = useAttachments()
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export default function AdminReferencesPage() {
     if (!form.title.trim() || saving) return
     setSaving(true)
     setJustPublished(false)
+    setPublishError('')
     try {
       await api.addReference(projectId, { ...form, attachments })
       setForm(blankForm())
@@ -60,6 +62,10 @@ export default function AdminReferencesPage() {
       load()
       setJustPublished(true)
       setTimeout(() => setJustPublished(false), 3500)
+    } catch (err) {
+      // Files upload to storage before the reference is created, so this is also
+      // where a failed upload surfaces.
+      setPublishError(err.message || "We couldn't publish that just now. Please try again.")
     } finally {
       setSaving(false)
     }
@@ -189,6 +195,11 @@ export default function AdminReferencesPage() {
                 </span>
               )}
             </div>
+            {publishError && (
+              <div role="alert" style={{ fontSize: 13.5, color: C.danger, background: C.dangerBg, padding: '9px 12px', borderRadius: C.radiusSm }}>
+                {publishError}
+              </div>
+            )}
           </div>
         </div>
 

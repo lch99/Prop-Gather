@@ -14,6 +14,11 @@ const mocks = vi.hoisted(() => ({
   // unauthenticated URL — a mock without it would make that guard vacuous.
   COMMUNITY_IMAGE_PREFIX: 'community-images',
   buildCommunityImageKey: vi.fn((projectId, kind) => `community-images/${projectId}/${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`),
+  // Post attachments (forum, chat, defects, references): the same fake bucket
+  // under a third prefix, re-exported for the same reason as the one above —
+  // util/attachments.js refuses any key outside <prefix>/<projectId>/<userId>/.
+  ATTACHMENT_PREFIX: 'community-attachments',
+  buildAttachmentKey: vi.fn((projectId, userId) => `community-attachments/${projectId}/${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 14)}`),
   createUploadUrl: vi.fn(async (key) => `https://mock-s3.test/${key}?presigned=upload`),
   createDownloadUrl: vi.fn(async (key) => `https://mock-s3.test/${key}?presigned=download`),
   headObject: vi.fn(async (key) => (key.includes('missing-key') ? null : { ContentLength: 1024 })),
