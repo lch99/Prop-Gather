@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
-import { C, card, badge, button } from '../../theme'
+import { C, card, badge } from '../../theme'
 
 const tierStyle = (tier) => {
   if (tier === 'Premium') return badge(C.accent, C.accentLight)
@@ -70,7 +70,6 @@ export default function VendorsTab({ projectId }) {
               {v.ssmVerified && <span style={badge(C.success, C.successBg)}>✓ Verified Business</span>}
               {v.ownerRecommended && <span style={badge(C.accent, C.accentLight)}>👍 Owner Recommended</span>}
             </div>
-            <button style={{ ...button('outline'), width: '100%' }}>View profile & contact</button>
           </div>
         ))}
         {filtered.length === 0 && (
