@@ -16,6 +16,7 @@ import { defectsRouter } from './routes/defects.js'
 import { documentsRouter } from './routes/documents.js'
 import { referencesRouter } from './routes/references.js'
 import { feesRouter } from './routes/fees.js'
+import { statsRouter } from './routes/stats.js'
 import { sharePreviewRouter } from './routes/sharePreview.js'
 import { attachmentsRouter } from './routes/attachments.js'
 
@@ -41,6 +42,9 @@ export function createApp() {
   app.use('/api/projects', projectsRouter)
   app.use('/api/applications', applicationsRouter)
   app.use('/api/audit-log', auditLogRouter)
+  // Platform growth figures for the admin dashboard. Top-level rather than under
+  // /api/projects because it reads users, memberships and applications too.
+  app.use('/api/stats', statsRouter)
   app.use('/api/community-requests', communityRequestsRouter)
   // Global vendor directory management — see the comment in routes/vendors.js
   // for why this isn't under /api/projects/:projectId/vendors.

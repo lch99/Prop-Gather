@@ -50,6 +50,7 @@ export default function App() {
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/admin" element={<RequireAuth role="admin"><AdminPage /></RequireAuth>} />
+            <Route path="/admin/dashboard" element={<RequireAuth role="admin"><AdminPage /></RequireAuth>} />
             <Route path="/admin/overview" element={<RequireAuth role="admin"><AdminPage /></RequireAuth>} />
             <Route path="/admin/verification" element={<RequireAuth role="admin"><AdminPage /></RequireAuth>} />
             <Route path="/admin/requests" element={<RequireAuth role="admin"><AdminPage /></RequireAuth>} />

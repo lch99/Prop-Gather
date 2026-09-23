@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { getDb } from '../db/index.js'
+import { getDb, withTransaction } from '../db/index.js'
 import { id } from '../util/ids.js'
 import { validate } from '../middleware/validate.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
@@ -11,6 +11,7 @@ import { COMMUNITY_IMAGE_PREFIX, buildCommunityImageKey, createUploadUrl, create
 import { recordAudit } from '../util/audit.js'
 import { serializeReference } from '../util/attachments.js'
 import { PROGRESS_TYPE } from './references.js'
+import { monthKey } from '../util/months.js'
 import { wrap } from '../util/asyncHandler.js'
 
 export const projectsRouter = Router()
@@ -26,7 +27,9 @@ const SHARE_CHANNELS = ['whatsapp', 'telegram', 'facebook', 'x', 'email', 'copy'
 // Reserved: arrivals on a share link, written only by the route below. Clients
 // can't send it (it isn't in SHARE_CHANNELS), which is what keeps "shared 40
 // times, opened 6 times" an honest pair of numbers rather than one total.
-const VISIT_CHANNEL = 'visit'
+// Exported because routes/stats.js has to make the same split when it reads the
+// monthly counters, and two copies of this string would drift.
+export const VISIT_CHANNEL = 'visit'
 
 projectsRouter.get('/', wrap(async (req, res) => {
   const { state, type, search } = req.query
@@ -361,13 +364,26 @@ const shareSchema = z.object({
   channel: z.enum(SHARE_CHANNELS, { errorMap: () => ({ message: 'That is not a share destination we recognise.' }) })
 })
 
+// Two counters, one increment. community_shares holds the all-time total plus
+// the first/last timestamps; community_share_months (migration 0012) holds the
+// same increment filed under the Malaysian calendar month it landed in, which is
+// what the admin dashboard reads. In a transaction so a failure can't leave a
+// lifetime total that no month accounts for.
 async function bumpShareCounter(projectId, channel) {
   const now = new Date().toISOString()
-  await getDb().run(`
-    INSERT INTO community_shares (project_id, channel, share_count, first_shared_at, last_shared_at)
-    VALUES (:projectId, :channel, 1, :now, :now)
-    ON DUPLICATE KEY UPDATE share_count = share_count + 1, last_shared_at = :now
-  `, { projectId, channel, now })
+  const month = monthKey()
+  await withTransaction(async (tx) => {
+    await tx.run(`
+      INSERT INTO community_shares (project_id, channel, share_count, first_shared_at, last_shared_at)
+      VALUES (:projectId, :channel, 1, :now, :now)
+      ON DUPLICATE KEY UPDATE share_count = share_count + 1, last_shared_at = :now
+    `, { projectId, channel, now })
+    await tx.run(`
+      INSERT INTO community_share_months (project_id, channel, month, share_count)
+      VALUES (:projectId, :channel, :month, 1)
+      ON DUPLICATE KEY UPDATE share_count = share_count + 1
+    `, { projectId, channel, month })
+  })
 }
 
 // Records that someone sent this community's link somewhere.

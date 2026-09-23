@@ -263,13 +263,24 @@ account, which is the whole point of a share:
 |---|---|---|
 | `POST /api/projects/:id/share` | none | Counts a share, `{ channel }` from a fixed list (whatsapp, telegram, facebook, x, email, copy, native) |
 | `POST /api/projects/:id/share-visit` | none | Counts an arrival on a shared link |
-| `GET /api/projects/share-stats` | admin | Shares sent vs. links opened, per community |
+| `GET /api/projects/share-stats` | admin | Shares sent vs. links opened, per community, all time |
 | `GET /s/:id` | none | Not under `/api` — HTML with that community's Open Graph tags, then a redirect into the app |
 
-The counters live in `community_shares`, one row per (community, channel),
-upserted in place — see the `0009` migration for why an append-only event log
-would be the wrong shape for a public endpoint, and why no user id, IP or user
-agent is stored (it keeps the whole feature outside PDPA scope).
+The counters live in **two** tables, both upserted in place inside one
+transaction by `bumpShareCounter()`:
+
+- `community_shares` — one row per (community, channel), incremented forever.
+  All-time totals, plus the first/last shared timestamps.
+- `community_share_months` — the same increment filed under the Malaysian
+  calendar month it landed in (`0012`). Windowed questions only; this is what the
+  admin dashboard reads.
+
+See the `0009` migration for why an append-only event log would be the wrong
+shape for a public endpoint, and why no user id, IP or user agent is stored (it
+keeps the whole feature outside PDPA scope) — `0012` inherits both properties.
+Counts recorded before `0012` exist only in the lifetime table, so for the first
+month after that deploy the all-time total legitimately exceeds the sum of the
+months. Nothing reads them as equal.
 
 Two asymmetries worth keeping:
 
@@ -284,6 +295,38 @@ Two asymmetries worth keeping:
 `GET /s/:id` needs one nginx `location` block to actually receive the request in
 production — without it the static frontend answers and links preview as the
 generic site card. DEPLOYMENT.md 2.8b.
+
+### Admin dashboard stats
+
+`GET /api/stats` (admin-only, `src/routes/stats.js`) is the one request behind the
+admin console's Dashboard tab: new sign-ups, new verified members, applications
+and share/open counts, each as `{ thisMonth, lastMonth, total, series }` over a
+six-month trend, plus this month's share-channel breakdown and the busiest
+communities.
+
+Its own resource rather than another route on `/api/projects`, because it reads
+users, memberships, applications and the share counters together — hanging a
+users query off a path that says "projects" would be a lie about where the data
+lives.
+
+Two things it is careful about:
+
+- **Months are Malaysian, not UTC.** `src/util/months.js` turns a `'YYYY-MM'` key
+  into a half-open `[start, end)` window of UTC ISO strings at a fixed +8 offset.
+  It is done in JS, not SQL, because MySQL's `CONVERT_TZ` needs timezone tables a
+  stock install does not load, and because every timestamp in this schema is an
+  ISO-8601 *string* rather than a `DATETIME`. Comparing those strings with
+  `>=` / `<` works precisely because they sort chronologically. Without the shift,
+  anything happening between midnight and 8am on the 1st falls in the wrong month.
+- **One scan per table, not one query per month.** `monthlyCounts()` turns each
+  month into a `SUM(CASE WHEN … )` column over a single pass. Only literals from
+  that file are interpolated into the SQL; the boundaries are bound parameters.
+
+A sign-up is not a joiner. `users.created_at` counts accounts created;
+`community_memberships.verified_at` counts people an admin actually let into a
+community. The dashboard shows both because the gap between them is the
+verification backlog. Admin accounts are excluded from sign-ups — they are made
+by hand with `npm run create-admin` and would otherwise read as organic growth.
 
 ### Adding communities
 

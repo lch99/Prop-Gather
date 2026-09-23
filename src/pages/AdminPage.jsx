@@ -4,6 +4,7 @@ import { api } from '../api'
 import { C } from '../theme'
 import { useAuth } from '../auth'
 import Seo from '../seo'
+import AdminDashboardPage from './AdminDashboardPage'
 import AdminOverviewPage from './AdminOverviewPage'
 import AdminVerificationPage from './AdminVerificationPage'
 import AdminReferencesPage from './AdminReferencesPage'
@@ -45,13 +46,17 @@ export default function AdminPage() {
   const requestCount = requests?.length || 0
 
   const tabs = [
-    { key: 'overview', label: 'Overview', icon: '📊', path: '/admin/overview' },
+    { key: 'dashboard', label: 'Dashboard', icon: '📈', path: '/admin/dashboard' },
+    { key: 'overview', label: 'Communities', icon: '📊', path: '/admin/overview' },
     { key: 'verification', label: 'Verification Queue', icon: '🛡️', path: '/admin/verification', count: pendingCount },
     { key: 'requests', label: 'Requested Communities', icon: '📮', path: '/admin/requests', count: requestCount },
     { key: 'references', label: 'Community References', icon: '📂', path: '/admin/references' },
     { key: 'activity', label: 'Activity Log', icon: '📋', path: '/admin/activity' }
   ]
-  const active = tabs.find(t => location.pathname.startsWith(t.path))?.key || 'overview'
+  // Bare /admin lands on the first tab, which is now the dashboard — the numbers
+  // are what an admin opens the console to check, and the community list is one
+  // click away.
+  const active = tabs.find(t => location.pathname.startsWith(t.path))?.key || 'dashboard'
 
   const select = (tab) => navigate(tab.path, { replace: true })
 
@@ -97,6 +102,7 @@ export default function AdminPage() {
         </div>
       </div>
 
+      {active === 'dashboard' && <AdminDashboardPage />}
       {active === 'overview' && <AdminOverviewPage />}
       {/* No `actor` prop: the backend attributes a decision to whoever holds the
           bearer token, so passing the acting admin from the client would be

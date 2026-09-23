@@ -86,9 +86,24 @@ export const api = {
     request(`/projects/${projectId}/share-visit`, { method: 'POST', body: {} }),
 
   // Admin-only. See createProject for why `role` is checked client-side too.
+  // All-time totals per community; the dashboard's month-by-month view of the
+  // same counters comes from getDashboardStats below.
   getShareStats: async (role) => {
     if (role && role !== 'admin') return []
     return request('/projects/share-stats')
+  },
+
+  // ── Admin dashboard ───────────────────────────────────────────────────────
+  // Platform growth for the current Malaysian month plus a six-month trend —
+  // new sign-ups, new verified members, applications, and the shares/opens
+  // behind them. Admin-only; the `role` guard is the same UX short-circuit as
+  // above, not the access boundary.
+  //
+  // Rejects rather than returning a shape, because the page has no sensible
+  // empty dashboard to draw — the caller catches and renders an error instead.
+  getDashboardStats: async (role) => {
+    if (role && role !== 'admin') throw new Error('Only platform admins can see the dashboard.')
+    return request('/stats')
   },
 
   // Admin-only. The `role` guard is a UX short-circuit so a non-admin gets the
