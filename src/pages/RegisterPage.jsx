@@ -263,7 +263,7 @@ export default function RegisterPage() {
             {user ? (
               <div style={{ ...card, padding: 14, background: C.blueLight, border: 'none', fontSize: 13.5, color: C.text }}>
                 Signed in as <strong>{user.name}</strong> ({user.email}). Your application will be filed under
-                this account — <Link to="/login" style={{ color: C.blue, fontWeight: 700 }}>use a different one</Link> if
+                this account — <Link to={`/login?switch=1&next=${encodeURIComponent('/register')}`} style={{ color: C.blue, fontWeight: 700 }}>use a different one</Link> if
                 that isn't you.
               </div>
             ) : (

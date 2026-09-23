@@ -347,6 +347,31 @@ input:focus, textarea:focus, select:focus {
   .pg-nav-short { display: none; }
 }
 
+/* landing page: PropGather-vs-group-chat table. Below a 28px tick, the two
+   right-hand columns are only as wide as their heading needs, so on phones they
+   take a fixed width — sized off "PropGather", which cannot wrap — and the
+   label column keeps the rest. The proportional split left it 3 words wide at
+   360px. Inline styles on the cells mean the overrides have to be !important. */
+.pg-compare-row {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr;
+  align-items: center;
+}
+
+@media (max-width: 640px) {
+  .pg-compare-row {
+    grid-template-columns: 1fr 82px 82px;
+  }
+  .pg-compare-row > div {
+    padding: 12px 6px !important;
+    font-size: 12.5px !important;
+  }
+  .pg-compare-row > div:first-child {
+    padding: 12px 8px 12px 14px !important;
+    font-size: 15px !important;
+  }
+}
+
 /* Share sheet (components/Share.jsx) — a bottom sheet on phones, where a thumb
    reaches the bottom of the screen far more easily than the middle, and a
    centred dialog once there is room for one. */

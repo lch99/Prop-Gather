@@ -83,6 +83,16 @@ export function authed(app, token) {
 export const RESIDENT = { email: 'resident@propgather.com', password: 'resident123', projectId: 'p1' }
 export const ADMIN = { email: 'admin@propgather.com', password: 'admin123' }
 
+// Step 1 of attaching a file — the upload-url request — returning the attachment
+// as the frontend sends it. Step 2 (PUTting the bytes) is skipped because S3 is
+// mocked (test/setup.js): the key reads back as uploaded.
+export async function uploadAttachment(app, token, projectId, { name = 'photo.jpg', type = 'image/jpeg', size = 1024 } = {}) {
+  const res = await authed(app, token).post(`/api/projects/${projectId}/attachments/upload-url`)
+    .send({ fileName: name, fileType: type, fileSize: size })
+  if (res.status !== 200) throw new Error(`upload-url failed: ${res.status} ${JSON.stringify(res.body)}`)
+  return { name, type, size, key: res.body.key }
+}
+
 // The real flow is: POST /api/applications/upload-url -> PUT bytes to S3 -> submit
 // the returned key here. Tests skip the middle step since S3 is mocked (see
 // test/setup.js) — any key other than the 'missing-key' sentinel is treated as

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { freshApp, authed, login, RESIDENT } from './helpers.js'
+import { freshApp, authed, login, uploadAttachment, RESIDENT } from './helpers.js'
 
 let app
 let residentToken
@@ -62,18 +62,20 @@ describe('POST /api/projects/:projectId/defects', () => {
     expect(res.status).toBe(403)
   })
 
-  it('stores attachments and returns them', async () => {
-    const photo = { name: 'crack.jpg', type: 'image/jpeg', size: 2048, dataUrl: 'data:image/jpeg;base64,AAAA' }
+  it('stores attachments and returns them with a signed URL', async () => {
+    const photo = await uploadAttachment(app, residentToken, 'p1', { name: 'crack.jpg' })
     const res = await authed(app, residentToken).post('/api/projects/p1/defects').send({
       title: 'Cracked pillar', category: 'Structural', description: 'Visible crack in basement pillar',
       attachments: [photo]
     })
     expect(res.status).toBe(201)
-    expect(res.body.attachments).toEqual([photo])
+    expect(res.body.attachments).toEqual([
+      { name: 'crack.jpg', type: 'image/jpeg', size: 1024, dataUrl: expect.stringContaining(photo.key) }
+    ])
 
     // And they survive the round trip, rather than only echoing the request.
     const list = await authed(app, residentToken).get('/api/projects/p1/defects')
-    expect(list.body.find(d => d.id === res.body.id).attachments).toEqual([photo])
+    expect(list.body.find(d => d.id === res.body.id).attachments).toEqual(res.body.attachments)
   })
 
   it('defaults attachments to an empty array', async () => {
@@ -93,7 +95,7 @@ describe('POST /api/projects/:projectId/defects', () => {
   })
 
   it('rejects more than 6 attachments', async () => {
-    const photo = (i) => ({ name: `p${i}.jpg`, type: 'image/jpeg', size: 16, dataUrl: 'data:image/jpeg;base64,AAAA' })
+    const photo = (i) => ({ name: `p${i}.jpg`, type: 'image/jpeg', size: 16, key: `community-attachments/p1/u/p${i}` })
     const res = await authed(app, residentToken).post('/api/projects/p1/defects').send({
       title: 'Too many', category: 'General', description: 'D',
       attachments: Array.from({ length: 7 }, (_, i) => photo(i))
@@ -105,8 +107,8 @@ describe('POST /api/projects/:projectId/defects', () => {
     const res = await authed(app, residentToken).post('/api/projects/p1/defects').send({
       title: 'Too big', category: 'General', description: 'D',
       attachments: [
-        { name: 'a.jpg', type: 'image/jpeg', size: 6 * 1024 * 1024, dataUrl: 'data:image/jpeg;base64,AAAA' },
-        { name: 'b.jpg', type: 'image/jpeg', size: 6 * 1024 * 1024, dataUrl: 'data:image/jpeg;base64,AAAA' }
+        { name: 'a.jpg', type: 'image/jpeg', size: 6 * 1024 * 1024, key: 'community-attachments/p1/u/a' },
+        { name: 'b.jpg', type: 'image/jpeg', size: 6 * 1024 * 1024, key: 'community-attachments/p1/u/b' }
       ]
     })
     expect(res.status).toBe(400)

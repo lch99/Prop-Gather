@@ -77,10 +77,17 @@ Two rules the wiring depends on:
   (localStorage vs sessionStorage). It caches the user profile alongside the
   token only to avoid a logged-out flicker on first paint; the token is the
   credential, and `refresh()` re-reads the profile from `/auth/me` (call it
-  after anything that changes memberships). A 401 on a request that carried a
-  token clears the session. `DEMO_ACCOUNTS` are the backend's seeded dev
+  after anything that changes memberships). The cached profile is revalidated
+  once on every load, and memberships are read from `useAuth().user` — refresh
+  that rather than fetching a private copy of `/auth/me`, or the nav and the
+  page disagree. A 401 on a request that carried a token clears the session.
+  Any `?next=` destination goes through `safeNextPath()` before navigating. `DEMO_ACCOUNTS` are the backend's seeded dev
   accounts and are only rendered when `SHOW_DEMO_LOGINS` is on — dev-only by
   default. Password rules and rate limiting belong in `backend/`, not here.
+- **Pages are lazy-loaded**: every route in `src/App.jsx` is its own chunk via
+  `lazyPage()` (`src/components/LazyPage.jsx`), so a visitor downloads only the
+  page they open. Add new pages the same way, and don't import one page module
+  from another — that quietly merges their chunks back together.
 - **SEO**: every routable page renders one `<Seo>` from `src/seo.jsx` — it sets
   the title, description, canonical, Open Graph/Twitter tags and any JSON-LD.
   New public page? Add one, with a real description. New private page? Add one
@@ -96,11 +103,14 @@ Two rules the wiring depends on:
   to the backend counters. Add a `variant` there rather than hand-rolling a
   share link somewhere else, or the counts stop meaning anything.
 - **File attachments**: use the shared `useAttachments` / `AttachmentPicker` /
-  `AttachmentList` from `src/components/Attachments.jsx` (used by forum,
-  chat, defect reports, and registration) rather than building a new
-  upload widget — it already handles size/count limits and data-URL reads.
-  Community photos are the exception: they go straight to object storage as raw
-  `File`s, so use `CommunityAvatar` / `CommunityCover`
+  `AttachmentList` from `src/components/Attachments.jsx` (used by forum, chat,
+  defect reports, references and registration) rather than building a new
+  upload widget — it already handles size, count and type limits. It holds the
+  picked `File`s; `src/api.js` uploads them straight to object storage on submit
+  and sends only their keys. Never put file bytes inside a JSON body — see "Post
+  attachments" in `backend/README.md` for what that broke.
+  Community photos are the exception — one photo per slot, with a public URL —
+  so use `CommunityAvatar` / `CommunityCover`
   (`src/components/CommunityImage.jsx`) to render one and
   `CommunityPhotosEditor.jsx` to change one. Both display components fall back
   to the coloured initial / brand gradient, so never gate a layout on a
@@ -143,9 +153,12 @@ Two rules the wiring depends on:
   Community profile pictures and cover photos share that bucket under the
   `community-images/` prefix but are the opposite kind of object: public,
   served by an unauthenticated cacheable redirect, and *not* covered by the
-  14-day lifecycle rule. Keep the prefixes apart — widening the lifecycle
-  filter deletes every cover photo, and accepting a `verification-docs/` key as
-  a community photo publishes someone's SPA.
+  14-day lifecycle rule. Post attachments are a third prefix,
+  `community-attachments/<projectId>/<userId>/`: members-only signed URLs, no
+  lifecycle rule, deleted along with their post (`src/util/attachments.js`).
+  Keep the prefixes apart — widening the lifecycle filter deletes every cover
+  photo and posted file, and accepting a `verification-docs/` key as a
+  community photo or attachment publishes someone's SPA.
   Any admin action that touches personal data should call
   `recordAudit()` (`backend/src/util/audit.js`) so it shows up in
   `GET /api/audit-log`; recurring cleanup (e.g. the document-retention purge)

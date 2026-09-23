@@ -22,13 +22,27 @@ export default function AdminReferencesPage() {
   const [form, setForm] = useState(blankForm())
   const [saving, setSaving] = useState(false)
   const [justPublished, setJustPublished] = useState(false)
+  const [publishError, setPublishError] = useState('')
+  const [projectsLoaded, setProjectsLoaded] = useState(false)
+  const [projectsError, setProjectsError] = useState('')
   const { attachments, addFiles, removeAttachment, error: uploadError, reset } = useAttachments()
 
+  // With no community selected there are no references to load, so every path
+  // out of here that leaves projectId empty — no communities yet (a fresh
+  // install), or a failed request — lands `refs` on [] itself. Otherwise the
+  // skeletons below never resolve.
   useEffect(() => {
-    api.getProjects().then(list => {
-      setProjects(list)
-      if (list.length) setProjectId(list[0].id)
-    })
+    api.getProjects()
+      .then(list => {
+        setProjects(list)
+        if (list.length) setProjectId(list[0].id)
+        else setRefs([])
+      })
+      .catch(() => {
+        setProjectsError("We couldn't load the list of communities. Please refresh the page to try again.")
+        setRefs([])
+      })
+      .finally(() => setProjectsLoaded(true))
   }, [])
 
   // Deep-linked from the Overview dashboard (?projectId=&type=) — e.g. its
@@ -45,14 +59,23 @@ export default function AdminReferencesPage() {
   // `refs === null` renders skeletons, so a failed fetch has to land on [] or
   // they never resolve into the empty state.
   const load = () => { if (projectId) api.getReferences(projectId).then(setRefs).catch(() => setRefs([])) }
-  useEffect(() => { setRefs(null); load() }, [projectId])
+  useEffect(() => {
+    if (!projectId) return
+    setRefs(null)
+    load()
+  }, [projectId])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const submit = async () => {
     if (!form.title.trim() || saving) return
+    if (!projectId) {
+      setPublishError('Choose a community to publish this to first.')
+      return
+    }
     setSaving(true)
     setJustPublished(false)
+    setPublishError('')
     try {
       await api.addReference(projectId, { ...form, attachments })
       setForm(blankForm())
@@ -60,6 +83,10 @@ export default function AdminReferencesPage() {
       load()
       setJustPublished(true)
       setTimeout(() => setJustPublished(false), 3500)
+    } catch (err) {
+      // Files upload to storage before the reference is created, so this is also
+      // where a failed upload surfaces.
+      setPublishError(err.message || "We couldn't publish that just now. Please try again.")
     } finally {
       setSaving(false)
     }
@@ -92,6 +119,14 @@ export default function AdminReferencesPage() {
         >
           {projects.map(p => <option key={p.id} value={p.id}>{p.name} — {p.city}, {p.state}</option>)}
         </select>
+        {projectsError && (
+          <div role="alert" style={{ marginTop: 10, fontSize: 13.5, color: C.danger }}>{projectsError}</div>
+        )}
+        {projectsLoaded && !projectsError && projects.length === 0 && (
+          <div style={{ marginTop: 10, fontSize: 13.5, color: C.textMuted }}>
+            There are no communities yet. Add one from the Overview tab, then publish its references here.
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 20, alignItems: 'start' }}>
@@ -189,6 +224,11 @@ export default function AdminReferencesPage() {
                 </span>
               )}
             </div>
+            {publishError && (
+              <div role="alert" style={{ fontSize: 13.5, color: C.danger, background: C.dangerBg, padding: '9px 12px', borderRadius: C.radiusSm }}>
+                {publishError}
+              </div>
+            )}
           </div>
         </div>
 
@@ -204,7 +244,7 @@ export default function AdminReferencesPage() {
             </div>
           ) : refs.length === 0 ? (
             <div style={{ ...card, padding: 22, textAlign: 'center', color: C.textMuted }}>
-              Nothing published yet for this community.
+              {projectId ? 'Nothing published yet for this community.' : 'Nothing to show until there is a community to publish to.'}
             </div>
           ) : (
             <div style={{ display: 'grid', gap: 12 }}>

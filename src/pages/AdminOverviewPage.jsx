@@ -225,7 +225,7 @@ export default function AdminOverviewPage() {
   const { user } = useAuth()
   const [projects, setProjects] = useState(null)
   const [queue, setQueue] = useState([])
-  const [refsByProject, setRefsByProject] = useState({})
+  const [refSummary, setRefSummary] = useState([])
   const [shareStats, setShareStats] = useState([])
   const [search, setSearch] = useState('')
   const [adding, setAdding] = useState(false)
@@ -237,19 +237,11 @@ export default function AdminOverviewPage() {
 
   useEffect(() => {
     let alive = true
-    api.getProjects().then(async (list) => {
-      if (!alive) return
-      setProjects(list)
-      // One references fetch per community — same api.getReferences() the References
-      // admin page uses, just gathered across every project instead of one at a time.
-      // Each one is caught on its own: these are real requests now, and letting a
-      // single failure reject the batch would blank the reference counts for
-      // every community rather than just the one that failed.
-      const entries = await Promise.all(
-        list.map(p => api.getReferences(p.id).then(refs => [p.id, refs]).catch(() => [p.id, []]))
-      )
-      if (alive) setRefsByProject(Object.fromEntries(entries))
-    }).catch(() => { if (alive) setProjects([]) })
+    api.getProjects().then(list => { if (alive) setProjects(list) }).catch(() => { if (alive) setProjects([]) })
+    // Reference counts and each community's newest progress update, in one
+    // request rather than one references fetch per community. Failure leaves the
+    // counts at zero — the same trade as share stats below.
+    api.getReferenceSummary(user?.role).then(summary => { if (alive) setRefSummary(summary) }).catch(() => {})
     api.getVerificationQueue(user?.role).then(q => { if (alive) setQueue(q) }).catch(() => {})
     // How far each community has travelled: shares sent, and links actually
     // opened. Failure is swallowed and leaves the counts at zero — this is
@@ -263,6 +255,11 @@ export default function AdminOverviewPage() {
     [shareStats]
   )
 
+  const refsByProject = useMemo(
+    () => Object.fromEntries(refSummary.map(s => [s.projectId, s])),
+    [refSummary]
+  )
+
   const pendingByProject = useMemo(() => {
     const m = {}
     queue.forEach(a => { if (a.status === 'Pending') m[a.projectId] = (m[a.projectId] || 0) + 1 })
@@ -273,12 +270,11 @@ export default function AdminOverviewPage() {
     const communities = projects?.length || 0
     const residents = projects?.reduce((s, p) => s + (p.ownerCount || 0), 0) || 0
     const pending = queue.filter(a => a.status === 'Pending').length
-    const progressUpdates = Object.values(refsByProject)
-      .reduce((s, refs) => s + refs.filter(r => r.type === PROGRESS_TYPE).length, 0)
+    const progressUpdates = refSummary.reduce((s, r) => s + r.progressUpdates, 0)
     const shares = shareStats.reduce((sum, s) => sum + s.shares, 0)
     const shareVisits = shareStats.reduce((sum, s) => sum + s.visits, 0)
     return { communities, residents, pending, progressUpdates, shares, shareVisits }
-  }, [projects, queue, refsByProject, shareStats])
+  }, [projects, queue, refSummary, shareStats])
 
   const rows = useMemo(() => {
     if (!projects) return []
@@ -286,12 +282,11 @@ export default function AdminOverviewPage() {
     return projects
       .filter(p => !q || [p.name, p.city, p.state].some(v => v.toLowerCase().includes(q)))
       .map(p => {
-        const refs = refsByProject[p.id] || []
-        const progress = refs.filter(r => r.type === PROGRESS_TYPE)
+        const summary = refsByProject[p.id]
         return {
           project: p,
-          refCount: refs.length,
-          latestProgress: progress[0] || null,
+          refCount: summary?.references || 0,
+          latestProgress: summary?.latestProgress || null,
           pending: pendingByProject[p.id] || 0,
           share: sharesByProject[p.id] || null
         }
@@ -313,7 +308,6 @@ export default function AdminOverviewPage() {
 
   const onCreated = (project) => {
     setProjects(list => [...(list || []), project])
-    setRefsByProject(m => ({ ...m, [project.id]: [] }))
     setSearch('')            // so the new card isn't filtered out of view
     setAdding(false)
     setJustAdded(project)

@@ -10,6 +10,7 @@ import { conflict, unauthorized, notFound, forbidden } from '../util/errors.js'
 import { toMembership, communityImagePath } from '../util/serialize.js'
 import { recordAudit } from '../util/audit.js'
 import { deleteObject } from '../util/s3.js'
+import { attachmentKeys, deleteAttachmentObjects } from '../util/attachments.js'
 import { wrap } from '../util/asyncHandler.js'
 
 export const authRouter = Router()
@@ -151,6 +152,16 @@ authRouter.delete('/users/:id', requireAuth, requireRole('admin'), wrap(async (r
     .map(r => (r.document_file ? JSON.parse(r.document_file)?.key : null))
     .filter(Boolean)
 
+  // Files attached to the posts, messages and defect reports deleted below. The
+  // rows go in the transaction; without this their files would stay in storage
+  // with nothing left pointing at them.
+  const contentRows = await Promise.all([
+    db.all('SELECT attachments FROM forum_threads WHERE author_user_id = ?', [target.id]),
+    db.all('SELECT attachments FROM chat_messages WHERE sender_user_id = ?', [target.id]),
+    db.all('SELECT attachments FROM defects WHERE reported_by_user_id = ?', [target.id])
+  ])
+  const attachmentKeysToDelete = contentRows.flat().flatMap(r => attachmentKeys(r.attachments))
+
   const counts = await withTransaction(async (tx) => {
     // Threads authored by the user take their poll and upvotes with them.
     const threadRows = await tx.all('SELECT id FROM forum_threads WHERE author_user_id = ?', [target.id])
@@ -213,6 +224,8 @@ authRouter.delete('/users/:id', requireAuth, requireRole('admin'), wrap(async (r
       console.error(`Failed to delete S3 object ${key}`, err)
     })
   }
+  // Also best-effort, but with no lifecycle rule behind it — see util/attachments.js.
+  await deleteAttachmentObjects(attachmentKeysToDelete)
 
   res.json({ ok: true, erased: counts })
 }))

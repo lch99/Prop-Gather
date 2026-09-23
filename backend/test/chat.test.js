@@ -102,3 +102,35 @@ describe('DELETE /api/projects/:projectId/chat/:channel/messages/:messageId', ()
     expect(res.status).toBe(200)
   })
 })
+
+describe('paging through a channel', () => {
+  const send = (text, channel = 'general') =>
+    authed(app, residentToken).post(`/api/projects/p1/chat/${channel}/messages`).send({ text })
+  const page = (query) => authed(app, residentToken).get(`/api/projects/p1/chat/general/messages${query}`)
+
+  it('returns the newest page, oldest first, and pages back with ?before=', async () => {
+    for (const text of ['one', 'two', 'three']) {
+      const res = await send(text)
+      expect(res.status).toBe(201)
+    }
+
+    const newest = await page('?limit=2')
+    expect(newest.status).toBe(200)
+    expect(newest.body.map(m => m.text)).toEqual(['two', 'three'])
+
+    const earlier = await page(`?limit=2&before=${newest.body[0].id}`)
+    expect(earlier.status).toBe(200)
+    expect(earlier.body.map(m => m.text)).toEqual(['one'])
+  })
+
+  it('400s for a cursor that is not a message', async () => {
+    const res = await page('?before=msg_does_not_exist')
+    expect(res.status).toBe(400)
+  })
+
+  it('400s for a cursor from a different channel', async () => {
+    const elsewhere = await send('in facilities', 'facilities')
+    const res = await page(`?before=${elsewhere.body.id}`)
+    expect(res.status).toBe(400)
+  })
+})

@@ -1,13 +1,19 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { C } from '../theme'
-import { useAuth, initials } from '../auth'
+import { useAuth, initials, hasResidentSpace } from '../auth'
 
 const navItems = [
   { to: '/discover', label: 'Discover', short: 'Discover' },
-  { to: '/my-communities', label: 'My Communities', short: 'My Comms', auth: true },
+  { to: '/my-communities', label: 'My Communities', short: 'My Comms', auth: true, show: hasResidentSpace },
   { to: '/register', label: 'Join / Verify', short: 'Join', },
   { to: '/admin', label: 'Admin', short: 'Admin', auth: true, role: 'admin' }
 ]
+
+const visibleNav = (user) => navItems.filter(item =>
+  (!item.auth || user) &&
+  (!item.role || user?.role === item.role) &&
+  (!item.show || item.show(user))
+)
 
 const headerBtn = {
   padding: '8px 16px',
@@ -62,7 +68,7 @@ export default function Layout({ children }) {
             </div>
           </Link>
           <nav className="pg-header-nav" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', background: 'rgba(255,255,255,0.10)', borderRadius: 12, padding: 4 }}>
-            {navItems.filter(item => (!item.auth || user) && (!item.role || user?.role === item.role)).map(item => {
+            {visibleNav(user).map(item => {
               const active = location.pathname === item.to ||
                 (item.to !== '/' && location.pathname.startsWith(item.to + '/'))
               return (

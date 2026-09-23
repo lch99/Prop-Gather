@@ -234,3 +234,47 @@ describe('DELETE /api/projects/:projectId/forum/:threadId', () => {
     expect(res.status).toBe(200)
   })
 })
+
+describe('paging through the forum', () => {
+  const create = (title, category = 'Facilities') =>
+    authed(app, residentToken).post('/api/projects/p1/forum').send({ category, title, body: 'Body' })
+  const list = (query) => authed(app, residentToken).get(`/api/projects/p1/forum${query}`)
+
+  it('pages pinned-first then newest with ?limit= and ?before=', async () => {
+    const ids = []
+    for (const title of ['first', 'second', 'third']) {
+      const res = await create(title)
+      expect(res.status).toBe(201)
+      ids.push(res.body.id)
+    }
+
+    // Seeded for p1: f1-2 (pinned) and f1-1, both older than anything created here.
+    const one = await list('?limit=2')
+    expect(one.status).toBe(200)
+    expect(one.body.map(t => t.id)).toEqual(['f1-2', ids[2]])
+
+    const two = await list(`?limit=2&before=${ids[2]}`)
+    expect(two.body.map(t => t.id)).toEqual([ids[1], ids[0]])
+
+    const three = await list(`?limit=2&before=${ids[0]}`)
+    expect(three.body.map(t => t.id)).toEqual(['f1-1'])
+  })
+
+  it('filters by category on the server', async () => {
+    await create('A security note', 'Security')
+    const res = await list('?category=Security')
+    expect(res.status).toBe(200)
+    expect(res.body.length).toBeGreaterThan(0)
+    expect(res.body.every(t => t.category === 'Security')).toBe(true)
+  })
+
+  it('400s for an unknown category', async () => {
+    const res = await list('?category=Nonsense')
+    expect(res.status).toBe(400)
+  })
+
+  it('400s for a cursor that is not a post in this community', async () => {
+    const res = await list('?before=thr_does_not_exist')
+    expect(res.status).toBe(400)
+  })
+})

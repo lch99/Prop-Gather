@@ -153,11 +153,54 @@ Only admins can write these (`requireRole('admin')`), the same rule as creating
 a community — a community's photos are its shared identity in the directory,
 not something one of its residents should be able to change for everyone.
 
+### Post attachments
+
+Photos and files on forum posts, chat messages, defect reports and references:
+the same bucket again, a third prefix (`community-attachments/`), and a third
+set of rules. See `src/util/attachments.js` and `src/routes/attachments.js`.
+
+These used to be base64 data URLs inside the JSON body, stored in a `TEXT`
+column. MySQL rejected anything over 64 KB — an ordinary phone photo — and
+whatever did fit was sent back inside every list response, so opening a forum
+meant downloading every photo ever posted to it.
+
+1. Client calls `POST /api/projects/:projectId/attachments/upload-url` with
+   `{fileName, fileType, fileSize}` → `{key, uploadUrl}`. Members only (admins
+   pass, as everywhere); photos, PDF and Word documents; 5 MB per file.
+2. Browser `PUT`s the bytes straight to `uploadUrl`.
+3. The post, message, report or reference is created with `attachments:
+   [{name, type, size, key}]`. Every key must start with
+   `community-attachments/<projectId>/<the caller's user id>/` — anything else is
+   refused before storage is touched, because step 4 signs a URL for whatever
+   key a row holds and the bucket also holds ownership documents. Each object is
+   then `HeadObject`ed, and the size storage reports is the one stored (5 MB per
+   file, 10 MB in total).
+4. Reads return each file as `{name, type, size, dataUrl}`, where `dataUrl` is a
+   presigned `GET`. It is signed against the start of the current hour with a
+   two-hour lifetime, so every read within the hour returns the *same* URL and
+   the browser's cache works — a fresh signature per request would make every
+   visit download every photo again.
+5. Deleting the content deletes its files (best-effort), and so does account
+   erasure (`DELETE /api/auth/users/:id`). There is no lifecycle rule over this
+   prefix, and there must not be one: a file lives as long as its post.
+
+Rows written before this change still hold inline data URLs, and reads pass
+them through untouched. One known gap: a file uploaded in step 2 whose post is
+then never created (the request failed and was never retried) is referenced by
+no row, so neither deletion nor erasure can find it. The frontend reuses an
+already-uploaded file when a failed submit is retried, which keeps this rare.
+
+Lists that carry attachments are paginated too: `GET .../forum` (`?limit=`,
+default 20, `?before=<threadId>`, `?category=`) and `GET
+.../chat/:channel/messages` (`?limit=`, default 50, `?before=<messageId>`). A
+page shorter than the limit is the last one.
+
 **Required env vars** (`.env.example`): `AWS_REGION`, `AWS_S3_BUCKET`,
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, plus `S3_ENDPOINT` when the
 bucket lives on a non-AWS S3-compatible provider (this project uses
-**Cloudflare R2**). Without these, anything touching `/api/applications` that
-needs storage will 500 — there's no in-memory/local-disk fallback by design,
+**Cloudflare R2**). Without these, anything that needs storage — applications,
+community photos, post attachments — will 500; there's no in-memory/local-disk
+fallback by design,
 so a misconfigured deployment fails loudly instead of silently writing files
 somewhere that won't survive a redeploy.
 
@@ -220,13 +263,24 @@ account, which is the whole point of a share:
 |---|---|---|
 | `POST /api/projects/:id/share` | none | Counts a share, `{ channel }` from a fixed list (whatsapp, telegram, facebook, x, email, copy, native) |
 | `POST /api/projects/:id/share-visit` | none | Counts an arrival on a shared link |
-| `GET /api/projects/share-stats` | admin | Shares sent vs. links opened, per community |
+| `GET /api/projects/share-stats` | admin | Shares sent vs. links opened, per community, all time |
 | `GET /s/:id` | none | Not under `/api` — HTML with that community's Open Graph tags, then a redirect into the app |
 
-The counters live in `community_shares`, one row per (community, channel),
-upserted in place — see the `0009` migration for why an append-only event log
-would be the wrong shape for a public endpoint, and why no user id, IP or user
-agent is stored (it keeps the whole feature outside PDPA scope).
+The counters live in **two** tables, both upserted in place inside one
+transaction by `bumpShareCounter()`:
+
+- `community_shares` — one row per (community, channel), incremented forever.
+  All-time totals, plus the first/last shared timestamps.
+- `community_share_months` — the same increment filed under the Malaysian
+  calendar month it landed in (`0012`). Windowed questions only; this is what the
+  admin dashboard reads.
+
+See the `0009` migration for why an append-only event log would be the wrong
+shape for a public endpoint, and why no user id, IP or user agent is stored (it
+keeps the whole feature outside PDPA scope) — `0012` inherits both properties.
+Counts recorded before `0012` exist only in the lifetime table, so for the first
+month after that deploy the all-time total legitimately exceeds the sum of the
+months. Nothing reads them as equal.
 
 Two asymmetries worth keeping:
 
@@ -241,6 +295,38 @@ Two asymmetries worth keeping:
 `GET /s/:id` needs one nginx `location` block to actually receive the request in
 production — without it the static frontend answers and links preview as the
 generic site card. DEPLOYMENT.md 2.8b.
+
+### Admin dashboard stats
+
+`GET /api/stats` (admin-only, `src/routes/stats.js`) is the one request behind the
+admin console's Dashboard tab: new sign-ups, new verified members, applications
+and share/open counts, each as `{ thisMonth, lastMonth, total, series }` over a
+six-month trend, plus this month's share-channel breakdown and the busiest
+communities.
+
+Its own resource rather than another route on `/api/projects`, because it reads
+users, memberships, applications and the share counters together — hanging a
+users query off a path that says "projects" would be a lie about where the data
+lives.
+
+Two things it is careful about:
+
+- **Months are Malaysian, not UTC.** `src/util/months.js` turns a `'YYYY-MM'` key
+  into a half-open `[start, end)` window of UTC ISO strings at a fixed +8 offset.
+  It is done in JS, not SQL, because MySQL's `CONVERT_TZ` needs timezone tables a
+  stock install does not load, and because every timestamp in this schema is an
+  ISO-8601 *string* rather than a `DATETIME`. Comparing those strings with
+  `>=` / `<` works precisely because they sort chronologically. Without the shift,
+  anything happening between midnight and 8am on the 1st falls in the wrong month.
+- **One scan per table, not one query per month.** `monthlyCounts()` turns each
+  month into a `SUM(CASE WHEN … )` column over a single pass. Only literals from
+  that file are interpolated into the SQL; the boundaries are bound parameters.
+
+A sign-up is not a joiner. `users.created_at` counts accounts created;
+`community_memberships.verified_at` counts people an admin actually let into a
+community. The dashboard shows both because the gap between them is the
+verification backlog. Admin accounts are excluded from sign-ups — they are made
+by hand with `npm run create-admin` and would otherwise read as organic growth.
 
 ### Adding communities
 

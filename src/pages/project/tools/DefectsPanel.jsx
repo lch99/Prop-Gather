@@ -16,23 +16,27 @@ export default function DefectsPanel({ projectId, project }) {
   const [showNew, setShowNew] = useState(false)
   const [form, setForm] = useState({ title: '', block: '', floorRange: '', unit: '', category: 'General', description: '' })
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
   const { attachments, addFiles, removeAttachment, error: uploadError, reset: resetAttachments } = useAttachments()
 
   const load = () => api.getDefects(projectId).then(setDefects)
   useEffect(() => { load() }, [projectId])
 
   const create = async () => {
-    if (!form.title || !form.description) return
+    if (!form.title || !form.description || saving) return
     if (hasSensitiveContent(form.title, form.description)) return
-    // Photos are stored now, so the server's 10 MB total ceiling is reachable —
-    // silently swallowing that rejection would leave the form open with no
-    // explanation and the report unfiled.
+    // Photos upload to storage before the report is filed, so a failed upload or
+    // a refused file surfaces here — silently swallowing it would leave the form
+    // open with no explanation and the report unfiled.
     setError('')
+    setSaving(true)
     try {
       await api.createDefect(projectId, { ...form, attachments })
     } catch (err) {
       setError(err.message)
       return
+    } finally {
+      setSaving(false)
     }
     setForm({ title: '', block: '', floorRange: '', unit: '', category: 'General', description: '' })
     resetAttachments()
@@ -89,11 +93,14 @@ export default function DefectsPanel({ projectId, project }) {
           )}
           <div>
             <button
-              style={{ ...button('primary'), ...(hasSensitiveContent(form.title, form.description) ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+              style={{
+                ...button('primary'),
+                ...(hasSensitiveContent(form.title, form.description) ? { opacity: 0.5, cursor: 'not-allowed' } : saving ? { opacity: 0.7, cursor: 'wait' } : {})
+              }}
               onClick={create}
-              disabled={hasSensitiveContent(form.title, form.description)}
+              disabled={saving || hasSensitiveContent(form.title, form.description)}
             >
-              Submit
+              {saving ? (attachments.length ? 'Uploading…' : 'Submitting…') : 'Submit'}
             </button>
           </div>
         </div>

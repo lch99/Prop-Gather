@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import request from 'supertest'
-import { freshApp, authed, login, loginWithId, verifiedResident, outsider, sampleDocumentFile, ADMIN, RESIDENT } from './helpers.js'
+import { freshApp, authed, login, loginWithId, verifiedResident, outsider, sampleDocumentFile, uploadAttachment, ADMIN, RESIDENT } from './helpers.js'
 import { s3Mock } from './setup.js'
 
 let app
@@ -106,6 +106,24 @@ describe('DELETE /api/auth/users/:id — PDPA erasure', () => {
     const user = await verifiedResident(app, 'p1')
     await authed(app, adminToken).delete(`/api/auth/users/${user.userId}`)
     expect(s3Mock.deleteObject).toHaveBeenCalledTimes(1)
+  })
+
+  it('purges the files the user attached to posts, messages and defect reports', async () => {
+    const user = await verifiedResident(app, 'p1')
+    const forumFile = await uploadAttachment(app, user.token, 'p1')
+    const chatFile = await uploadAttachment(app, user.token, 'p1')
+    const defectFile = await uploadAttachment(app, user.token, 'p1')
+    await authed(app, user.token).post('/api/projects/p1/forum')
+      .send({ category: 'Facilities', title: 'T', body: 'B', attachments: [forumFile] })
+    await authed(app, user.token).post('/api/projects/p1/chat/general/messages')
+      .send({ text: 'hi', attachments: [chatFile] })
+    await authed(app, user.token).post('/api/projects/p1/defects')
+      .send({ title: 'T', category: 'General', description: 'D', attachments: [defectFile] })
+
+    await authed(app, adminToken).delete(`/api/auth/users/${user.userId}`)
+    for (const file of [forumFile, chatFile, defectFile]) {
+      expect(s3Mock.deleteObject).toHaveBeenCalledWith(file.key)
+    }
   })
 
   it('revokes the erased user\'s community membership', async () => {

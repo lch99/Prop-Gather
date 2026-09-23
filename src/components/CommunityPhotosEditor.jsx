@@ -6,11 +6,10 @@ import { CommunityAvatar, CommunityCover } from './CommunityImage'
 
 // Admin-only editor for a community's profile picture and cover photo.
 //
-// Deliberately not built on useAttachments/AttachmentPicker: those read a file
-// into a base64 data URL for posting inline, and these bytes go straight to
-// object storage instead (see api.uploadProjectImage). A cover photo off a phone
-// is several megabytes, so base64-ing it only to decode it again before the PUT
-// is a detour that costs the admin real seconds on a Malaysian mobile connection.
+// Not built on useAttachments/AttachmentPicker: those collect several files for
+// a post and upload them when it is submitted, whereas each photo here fills one
+// slot on the community itself and is saved on its own (see
+// api.uploadProjectImage).
 
 // Mirrors ALLOWED_IMAGE_TYPES / MAX_IMAGE_MB in backend/src/routes/projects.js.
 // Checked here too so a bad pick fails instantly rather than after an upload.

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import request from 'supertest'
-import { freshApp, authed, login, loginWithId, ADMIN, sampleDocumentFile } from './helpers.js'
+import { freshApp, authed, login, loginWithId, ADMIN, sampleDocumentFile, uploadAttachment } from './helpers.js'
 import { CHANNELS } from '../src/routes/chat.js'
 
 let app
@@ -48,7 +48,7 @@ describe('full user journey — register through every gated resource', () => {
       category: 'General Discussion',
       title: 'Journey test thread',
       body: 'Body text for the journey test.',
-      attachments: [{ name: 'photo.jpg', type: 'image/jpeg', size: 1024, dataUrl: 'data:image/jpeg;base64,AAA' }],
+      attachments: [await uploadAttachment(app, user.token, 'p2')],
       poll: { question: 'Best time for AGM?', options: ['Weekday evening', 'Weekend morning'] }
     })
     expect(threadRes.status).toBe(201)

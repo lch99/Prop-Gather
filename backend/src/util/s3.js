@@ -13,6 +13,13 @@ export const VERIFICATION_DOC_PREFIX = 'verification-docs'
 // retention clock — it stays until an admin replaces it.
 export const COMMUNITY_IMAGE_PREFIX = 'community-images'
 
+// Files attached to community content — forum posts, chat messages, defect
+// reports and references. A third prefix for a third set of rules: private like
+// verification documents (a URL is only ever signed for a member of that
+// community, see util/attachments.js), but kept for as long as the post that
+// carries them rather than for 14 days, so the lifecycle rule must not reach it.
+export const ATTACHMENT_PREFIX = 'community-attachments'
+
 const UPLOAD_URL_TTL_SECONDS = 5 * 60
 const DOWNLOAD_URL_TTL_SECONDS = 15 * 60
 
@@ -59,6 +66,14 @@ export function buildCommunityImageKey(projectId, kind) {
   return `${COMMUNITY_IMAGE_PREFIX}/${projectId}/${kind}-${Date.now()}-${keySuffix()}`
 }
 
+// Scoped to the community *and* the uploader. util/attachments.js checks both
+// before a key can be attached to anything, so a key is only usable by the
+// person who uploaded it, in the community it was uploaded for — never to point
+// a post at someone else's file, or at a verification document.
+export function buildAttachmentKey(projectId, userId) {
+  return `${ATTACHMENT_PREFIX}/${projectId}/${userId}/${Date.now()}-${keySuffix()}`
+}
+
 export async function createUploadUrl(key, contentType) {
   const command = new PutObjectCommand({ Bucket: bucket(), Key: key, ContentType: contentType })
   return getSignedUrl(s3(), command, { expiresIn: UPLOAD_URL_TTL_SECONDS })
@@ -67,9 +82,14 @@ export async function createUploadUrl(key, contentType) {
 // `ttlSeconds` is overridden for community photos, which are public images
 // redirected to from a cacheable URL rather than handed to one admin to open
 // once — the signature has to outlive the redirect's own cache window.
-export async function createDownloadUrl(key, ttlSeconds = DOWNLOAD_URL_TTL_SECONDS) {
+//
+// `signingDate` pins the signature's timestamp. Left unset, every call signs
+// "now" and returns a different URL for the same object, so a browser can never
+// reuse bytes it already downloaded; post attachments pass the start of a fixed
+// window instead (see util/attachments.js).
+export async function createDownloadUrl(key, ttlSeconds = DOWNLOAD_URL_TTL_SECONDS, { signingDate } = {}) {
   const command = new GetObjectCommand({ Bucket: bucket(), Key: key })
-  return getSignedUrl(s3(), command, { expiresIn: ttlSeconds })
+  return getSignedUrl(s3(), command, { expiresIn: ttlSeconds, ...(signingDate ? { signingDate } : {}) })
 }
 
 // Returns the object's metadata, or null if it doesn't exist (e.g. the client
