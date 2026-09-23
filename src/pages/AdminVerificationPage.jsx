@@ -61,6 +61,19 @@ export default function AdminVerificationPage({ queue, projects, reload }) {
         (target: within 24 hours).
       </p>
 
+      {/* Registration now tells residents to black out their IC number, the
+          price and their bank details, so redacted pages are the expected
+          submission here — rejecting them would undo the data minimisation. */}
+      <div style={{
+        background: C.blueLight, borderRadius: C.radiusSm, padding: '10px 14px',
+        fontSize: 13, color: C.text, lineHeight: 1.6, marginBottom: 14
+      }}>
+        <strong>Blacked-out sections are expected.</strong> Residents are asked to cover their IC number,
+        the purchase price and any bank details before uploading. Approve as long as the{' '}
+        <strong>name matches the account</strong> and the <strong>address matches the unit</strong> — reject
+        only if one of those two is unreadable, missing, or doesn't match.
+      </div>
+
       {error && (
         <div role="alert" style={{
           background: C.dangerBg, border: `1px solid ${C.danger}`, borderRadius: C.radiusSm,
