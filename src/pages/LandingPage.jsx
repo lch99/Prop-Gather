@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
-import { C, card, button, badge, chipColor } from '../theme'
+import { C, card, chipColor } from '../theme'
 import Seo from '../seo'
 
 // Resident-facing features. Each entry borrows a cheerful chip hue for its icon tile,
@@ -15,31 +15,20 @@ const FEATURES = [
   { icon: '🤝', title: 'Trusted vendors', text: 'See vendors and offers vetted for your community, plus petitions to rally support together.' }
 ]
 
-const PAINS = [
-  { icon: '📢', text: 'Important notices get buried under hundreds of unrelated messages in the WhatsApp group.' },
-  { icon: '🕵️', text: 'You never really know if the person posting actually lives in your building — or who let them in.' },
-  { icon: '🗳️', text: 'Big community decisions get made by a handful of people, with no clear record of who agreed to what.' },
-  { icon: '🧾', text: 'Maintenance fees and accounts are a black box — hard to question, harder to track.' },
-  { icon: '🔧', text: 'You report a leaking pipe or broken lift… and it vanishes into a void with no follow-up.' },
-  { icon: '🗂️', text: 'Bylaws, receipts, and notices are scattered across emails, chats, and notice boards.' }
-]
-
 const STEPS = [
   { n: '1', title: 'Find your community', text: "Browse Malaysia's national directory and search for your property by name, city, or state." },
   { n: '2', title: 'Verify your ownership', text: "Upload your Sale and Purchase Agreement (SPA), a recent utility bill, or a copy of the property title. We confirm you're a genuine owner — that's what keeps it safe." },
   { n: '3', title: 'Join & unlock the tools', text: "Once verified, step inside your community's forum, chat, and owner tools." }
 ]
 
-// [feature, in PropGather, in a normal group chat]
+// [feature, in PropGather, in a normal group chat]. Held to the five points a
+// group chat genuinely cannot do — a longer list only restates the same argument.
 const COMPARE = [
   ['Everyone is a verified resident', true, false],
   ['Organised threads you can actually find', true, false],
   ['Transparent polls & voting records', true, false],
   ['A residents-only space, free of management', true, false],
-  ['Track defects from report to fix', true, false],
-  ['Shared documents & fee statements', true, false],
-  ['No strangers, ads, or random adds', true, false],
-  ['Your data stays private to your building', true, false]
+  ['Track defects from report to fix', true, false]
 ]
 
 const TESTIMONIALS = [
@@ -120,9 +109,8 @@ export default function LandingPage() {
             <span className="pg-gradient-text">all in one trusted place</span>
           </h1>
 
-          <p style={{ margin: '0 auto 30px', color: 'rgba(255,255,255,0.94)', fontSize: 'clamp(15.5px, 4.2vw, 19px)', lineHeight: 1.6, maxWidth: 660 }}>
-            PropGather brings the residents of your property together — a private, verified space to
-            discuss, decide, and look after your home. Free to browse; join your own community once you're verified.
+          <p style={{ margin: '0 auto 30px', color: 'rgba(255,255,255,0.94)', fontSize: 'clamp(15.5px, 4.2vw, 19px)', lineHeight: 1.6, maxWidth: 620 }}>
+            A private space for the residents of your property to discuss, decide, and look after your home together.
           </p>
 
           <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
@@ -152,7 +140,7 @@ export default function LandingPage() {
             background: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.28)',
             borderRadius: 999, padding: '8px 18px'
           }}>
-            🔐 Only verified owners can join a community — your space stays private and safe.
+            🔐 Free to browse. Only verified owners can join a community.
           </div>
 
           {/* Stats */}
@@ -170,26 +158,31 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* ───────────────── Problem / "Sound familiar?" ───────────────── */}
+      {/* ───────────────── What it is ─────────────────
+          First thing after the hero: someone who has never heard of PropGather
+          should know what it is before the page argues for it. */}
       <Band background={C.brandLight}>
         <SectionHeading
-          eyebrow="Sound familiar?"
-          title="Living in a community shouldn't be this frustrating"
-          subtitle="Most buildings run on noisy group chats and word of mouth. Things get lost, trust breaks down, and the same problems repeat."
+          eyebrow="What is PropGather?"
+          title="A private, verified space for your building"
+          subtitle="Every property in Malaysia gets its own members-only space. We check that you really own or live there — then you and your neighbours get the tools to look after the place together."
         />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16, marginTop: 36 }}>
-          {PAINS.map(p => (
-            <div key={p.text} style={{
-              ...card, padding: '18px 20px', display: 'flex', gap: 14, alignItems: 'flex-start'
-            }}>
-              <div style={{ fontSize: 26, lineHeight: 1.2, flexShrink: 0 }} aria-hidden="true">{p.icon}</div>
-              <p style={{ margin: 0, color: C.text, fontSize: 16, lineHeight: 1.55 }}>{p.text}</p>
-            </div>
-          ))}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 18, marginTop: 36 }}>
+          {FEATURES.map(f => {
+            const [fg, bg] = chipColor(f.title)
+            return (
+              <div key={f.title} className="pg-card-hover" style={{ ...card, padding: 24 }}>
+                <div style={{
+                  width: 52, height: 52, borderRadius: 14, background: bg, color: fg,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 26, marginBottom: 14
+                }}>{f.icon}</div>
+                <h3 style={{ margin: '0 0 7px', color: C.navy, fontSize: 19 }}>{f.title}</h3>
+                <p style={{ margin: 0, color: C.textMuted, fontSize: 16, lineHeight: 1.6 }}>{f.text}</p>
+              </div>
+            )
+          })}
         </div>
-        <p style={{ textAlign: 'center', margin: '32px auto 0', maxWidth: 620, fontSize: 18, fontWeight: 700, color: C.navy, lineHeight: 1.5 }}>
-          PropGather fixes all of this — by making sure everyone is verified, and everything has its place. 👇
-        </p>
       </Band>
 
       {/* ───────────────── How it works ───────────────── */}
@@ -215,31 +208,6 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* ───────────────── Features ───────────────── */}
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '56px 24px 16px' }}>
-        <SectionHeading
-          eyebrow="Everything in one place"
-          title="Made for the people who live here"
-          subtitle="The tools your community needs to run well together — clear, friendly, and built for every resident."
-        />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 18, marginTop: 36 }}>
-          {FEATURES.map(f => {
-            const [fg, bg] = chipColor(f.title)
-            return (
-              <div key={f.title} className="pg-card-hover" style={{ ...card, padding: 24 }}>
-                <div style={{
-                  width: 52, height: 52, borderRadius: 14, background: bg, color: fg,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 26, marginBottom: 14
-                }}>{f.icon}</div>
-                <h3 style={{ margin: '0 0 7px', color: C.navy, fontSize: 19 }}>{f.title}</h3>
-                <p style={{ margin: 0, color: C.textMuted, fontSize: 16, lineHeight: 1.6 }}>{f.text}</p>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
       {/* ───────────────── Comparison ───────────────── */}
       <div style={{ maxWidth: 920, margin: '0 auto', padding: '56px 24px 16px' }}>
         <SectionHeading
@@ -249,17 +217,13 @@ export default function LandingPage() {
         />
         <div style={{ ...card, padding: 0, overflow: 'hidden', marginTop: 36 }}>
           {/* header row */}
-          <div style={{
-            display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr', alignItems: 'center',
-            background: C.neutralBg, fontWeight: 800, color: C.navy
-          }}>
+          <div className="pg-compare-row" style={{ background: C.neutralBg, fontWeight: 800, color: C.navy }}>
             <div style={{ padding: '14px 18px', fontSize: 15 }}>What you get</div>
             <div style={{ padding: '14px 12px', textAlign: 'center', fontSize: 15, color: C.blue, background: C.blueLight }}>PropGather</div>
             <div style={{ padding: '14px 12px', textAlign: 'center', fontSize: 15, color: C.textMuted }}>Group chat</div>
           </div>
           {COMPARE.map(([label, a, b], i) => (
-            <div key={label} style={{
-              display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr', alignItems: 'center',
+            <div key={label} className="pg-compare-row" style={{
               borderTop: `1px solid ${C.border}`, background: i % 2 ? '#fff' : '#fafcfe'
             }}>
               <div style={{ padding: '14px 18px', fontSize: 16, color: C.text, fontWeight: 600 }}>{label}</div>
@@ -304,27 +268,9 @@ export default function LandingPage() {
         </div>
       </Band>
 
-      {/* ───────────────── Trust band ───────────────── */}
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '56px 24px 16px' }}>
-        <div style={{
-          ...card, padding: '32px 28px', background: C.blueLight, border: `1px solid ${C.border}`,
-          display: 'flex', gap: 22, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', textAlign: 'center'
-        }}>
-          <div style={{ fontSize: 46, lineHeight: 1 }}>🛡️</div>
-          <div style={{ maxWidth: 720 }}>
-            <h3 style={{ margin: '0 0 8px', color: C.navy, fontSize: 22 }}>Real owners. Real neighbours. No strangers.</h3>
-            <p style={{ margin: 0, color: C.text, fontSize: 16.5, lineHeight: 1.6 }}>
-              Every member is verified against their Sale and Purchase Agreement (SPA), a recent utility bill, or a
-              copy of the property title before joining. Your proof document is
-              used for verification only and deleted within 14 days — never sold or shared. It's a residents-only
-              space: building management and developers have no access, so the only people here are the ones who
-              actually live in your building.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* ───────────────── FAQ ───────────────── */}
+      {/* ───────────────── FAQ ─────────────────
+          Also carries the verification, 14-day retention and residents-only
+          promises that used to be repeated in a trust band of their own. */}
       <div style={{ maxWidth: 800, margin: '0 auto', padding: '56px 24px 16px' }}>
         <SectionHeading
           eyebrow="Questions, answered"
