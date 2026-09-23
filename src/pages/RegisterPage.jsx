@@ -5,6 +5,7 @@ import { useAuth } from '../auth'
 import { C, card, button, badge } from '../theme'
 import Seo from '../seo'
 import { useAttachments, AttachmentPicker, AttachmentList } from '../components/Attachments'
+import ProofSample from '../components/ProofSample'
 
 const steps = ['Register', 'Upload proof', 'Admin review', 'Access granted']
 
@@ -330,6 +331,11 @@ export default function RegisterPage() {
             <p style={{ color: C.textMuted, margin: 0 }}>
               Required document for <strong>{form.tier}</strong>: {docByTier[form.tier]}
             </p>
+
+            {/* Shown before the picker, not after: the point is to change which
+                file someone chooses, and how much of it they leave readable. */}
+            <ProofSample tier={form.tier} />
+
             <AttachmentPicker
               attachments={attachments}
               addFiles={addFiles}
@@ -465,13 +471,17 @@ export default function RegisterPage() {
             As a <strong>{form.tier}</strong>, you'll need to upload your <strong>{docByTier[form.tier]}</strong> to
             prove your connection to the property.
           </p>
+          <p style={{ margin: '8px 0 0', fontSize: 13, color: C.textMuted, lineHeight: 1.6 }}>
+            Just one page — the one with your name and the address. Your IC number, the price and any
+            bank details can be blacked out first; step 2 shows an example.
+          </p>
         </div>
 
         <div style={{ ...card, padding: 20 }}>
           <h3 style={{ margin: '0 0 10px', color: C.navy, fontSize: 16 }}>How it works</h3>
           <div style={{ display: 'grid', gap: 12, fontSize: 13, color: C.textMuted, lineHeight: 1.5 }}>
             <div><strong style={{ color: C.navy }}>1. Register</strong><br />Tell us who you are and which property you're connected to.</div>
-            <div><strong style={{ color: C.navy }}>2. Upload proof</strong><br />Submit a document proving your ownership of the property.</div>
+            <div><strong style={{ color: C.navy }}>2. Upload proof</strong><br />One page showing your name and the address — black out anything else.</div>
             <div><strong style={{ color: C.navy }}>3. Admin review</strong><br />A platform admin checks your document, usually within 24 hours.</div>
             <div><strong style={{ color: C.navy }}>4. Access granted</strong><br />Get a verified badge and full access to your community.</div>
           </div>

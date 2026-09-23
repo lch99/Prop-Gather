@@ -37,6 +37,12 @@ function EnglishContent() {
           <li>Timestamp and record of your explicit consent at the point of document upload</li>
         </ul>
         <p style={{ margin: '10px 0 0' }}>
+          We only need to read <strong>your name</strong> and <strong>the property address</strong> on that
+          document. You are encouraged to black out everything else — your IC/NRIC number, the purchase
+          price, loan and bank details, and signatures — before you upload it. Registration shows an
+          example of a correctly covered page.
+        </p>
+        <p style={{ margin: '10px 0 0' }}>
           All of this is collected directly from you, at registration and document upload — we don't buy or
           receive your data from any third-party source.
         </p>
@@ -158,6 +164,12 @@ function BahasaContent() {
           </li>
           <li>Cap masa dan rekod persetujuan eksplisit anda pada ketika muat naik dokumen</li>
         </ul>
+        <p style={{ margin: '10px 0 0' }}>
+          Kami hanya perlu membaca <strong>nama anda</strong> dan <strong>alamat hartanah</strong> pada
+          dokumen tersebut. Anda digalakkan menutup (black out) semua maklumat lain — nombor IC/NRIC,
+          harga belian, butiran pinjaman dan bank, serta tandatangan — sebelum memuat naiknya. Halaman
+          pendaftaran menunjukkan contoh halaman yang ditutup dengan betul.
+        </p>
         <p style={{ margin: '10px 0 0' }}>
           Semua ini dikumpul secara langsung daripada anda, semasa pendaftaran dan muat naik dokumen —
           kami tidak membeli atau menerima data anda daripada mana-mana sumber pihak ketiga.

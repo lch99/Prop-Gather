@@ -77,6 +77,16 @@ review this and the linked code before you rely on it.
       Contractors categories. Limits the "collect only what's needed"
       Principle at the point of entry, since forum/chat content has no edit
       endpoint and is visible to every verified member.
+- [x] **Redaction guidance at the point of upload** (Data Minimisation) —
+      `src/components/ProofSample.jsx`, rendered in step 2 of registration.
+      Shows a mock of the document page with the name and address highlighted
+      and the IC number, price and bank details blacked out, so residents send
+      a covered page instead of a full SPA. The matching note on
+      `AdminVerificationPage` tells reviewers that redacted pages are the
+      expected submission and to judge only name-vs-account and
+      address-vs-unit, so minimisation doesn't cost applicants an approval.
+      This is prevention, not a control: what never reaches the bucket can't
+      be exposed by one, and it doesn't shrink what's already there.
 - [x] Breach response runbook (template) — `backend/docs/BREACH_RESPONSE.md`
 - [x] DPO role reference doc (what the role must do once someone is
       appointed — not an appointment itself) — `backend/docs/DPO_ROLE.md`
