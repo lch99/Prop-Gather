@@ -12,7 +12,7 @@ export default function VendorsTab({ projectId }) {
   const [vendors, setVendors] = useState([])
   const [category, setCategory] = useState('All')
 
-  useEffect(() => { api.getVendors(projectId).then(setVendors) }, [projectId])
+  useEffect(() => { api.getVendors(projectId).then(setVendors).catch(() => setVendors([])) }, [projectId])
 
   const categories = ['All', ...new Set(vendors.map(v => v.category))]
   const filtered = category === 'All' ? vendors : vendors.filter(v => v.category === category)

@@ -5,12 +5,18 @@ import PollView from '../../../components/PollView'
 
 export default function PollsPanel({ projectId }) {
   const [polls, setPolls] = useState([])
+  const [error, setError] = useState('')
 
-  useEffect(() => { api.getPolls(projectId).then(setPolls) }, [projectId])
+  useEffect(() => { api.getPolls(projectId).then(setPolls).catch(() => setPolls([])) }, [projectId])
 
   const vote = async (pollId, optionId) => {
-    const updated = await api.votePoll(projectId, pollId, optionId)
-    setPolls(ps => ps.map(p => p.id === updated.id ? updated : p))
+    try {
+      const updated = await api.votePoll(projectId, pollId, optionId)
+      setPolls(ps => ps.map(p => p.id === updated.id ? updated : p))
+      setError('')
+    } catch (err) {
+      setError(err.message || "We couldn't record that vote just now. Please try again.")
+    }
   }
 
   return (
@@ -19,6 +25,15 @@ export default function PollsPanel({ projectId }) {
       <p style={{ margin: '0 0 16px', color: C.textMuted, fontSize: 13 }}>
         Results are hidden until you vote — prevents the bandwagon effect.
       </p>
+
+      {error && (
+        <div role="alert" style={{
+          fontSize: 13, color: C.danger, background: C.dangerBg, padding: '8px 10px',
+          borderRadius: C.radiusSm, marginBottom: 14
+        }}>
+          {error}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gap: 16 }}>
         {polls.map(poll => (

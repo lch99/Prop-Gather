@@ -12,7 +12,7 @@ const categoryColor = (cat) => {
 export default function DocumentsPanel({ projectId }) {
   const [docs, setDocs] = useState([])
 
-  useEffect(() => { api.getDocuments(projectId).then(setDocs) }, [projectId])
+  useEffect(() => { api.getDocuments(projectId).then(setDocs).catch(() => setDocs([])) }, [projectId])
 
   return (
     <div>

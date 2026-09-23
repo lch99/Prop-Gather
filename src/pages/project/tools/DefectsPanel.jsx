@@ -19,7 +19,7 @@ export default function DefectsPanel({ projectId, project }) {
   const [saving, setSaving] = useState(false)
   const { attachments, addFiles, removeAttachment, error: uploadError, reset: resetAttachments } = useAttachments()
 
-  const load = () => api.getDefects(projectId).then(setDefects)
+  const load = () => api.getDefects(projectId).then(setDefects).catch(() => setDefects([]))
   useEffect(() => { load() }, [projectId])
 
   const create = async () => {

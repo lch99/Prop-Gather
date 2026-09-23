@@ -7,22 +7,48 @@ export default function PetitionsPanel({ projectId }) {
   const [petitions, setPetitions] = useState([])
   const [showNew, setShowNew] = useState(false)
   const [form, setForm] = useState({ title: '', description: '', target: 100 })
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  // Which petition is mid-signature, so a slow tap can't be fired twice and the
+  // list can show it as pending rather than just sitting there.
+  const [signingId, setSigningId] = useState(null)
 
-  const load = () => api.getPetitions(projectId).then(setPetitions)
+  const load = () => api.getPetitions(projectId).then(setPetitions).catch(() => setPetitions([]))
   useEffect(() => { load() }, [projectId])
 
   const sign = async (id) => {
-    const updated = await api.signPetition(projectId, id)
-    setPetitions(ps => ps.map(p => p.id === updated.id ? updated : p))
+    if (signingId) return
+    setSigningId(id)
+    setError('')
+    try {
+      const updated = await api.signPetition(projectId, id)
+      setPetitions(ps => ps.map(p => p.id === updated.id ? updated : p))
+    } catch (err) {
+      setError(err.message || "We couldn't record your signature just now. Please try again.")
+    } finally {
+      setSigningId(null)
+    }
   }
 
   const create = async () => {
-    if (!form.title || !form.description || !form.target) return
+    if (saving) return
+    if (!form.title.trim() || !form.description.trim() || !form.target) {
+      setError('Please add a title, a description and a signature target to continue.')
+      return
+    }
     if (hasSensitiveContent(form.title, form.description)) return
-    await api.createPetition(projectId, form)
-    setForm({ title: '', description: '', target: 100 })
-    setShowNew(false)
-    load()
+    setError('')
+    setSaving(true)
+    try {
+      await api.createPetition(projectId, form)
+      setForm({ title: '', description: '', target: 100 })
+      setShowNew(false)
+      load()
+    } catch (err) {
+      setError(err.message || "We couldn't create that petition just now. Please try again.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -48,15 +74,32 @@ export default function PetitionsPanel({ projectId }) {
             <input type="number" min={1} value={form.target} onChange={e => setForm(f => ({ ...f, target: e.target.value }))} style={{ ...inputStyle, maxWidth: 140 }} />
           </label>
           <SensitiveContentNotice values={[form.title, form.description]} />
+          {error && (
+            <div role="alert" style={{ fontSize: 13, color: C.danger, background: C.dangerBg, padding: '8px 10px', borderRadius: C.radiusSm }}>
+              {error}
+            </div>
+          )}
           <div>
             <button
-              style={{ ...button('primary'), ...(hasSensitiveContent(form.title, form.description) ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+              style={{
+                ...button('primary'),
+                ...(hasSensitiveContent(form.title, form.description) ? { opacity: 0.5, cursor: 'not-allowed' } : saving ? { opacity: 0.7, cursor: 'wait' } : {})
+              }}
               onClick={create}
-              disabled={hasSensitiveContent(form.title, form.description)}
+              disabled={saving || hasSensitiveContent(form.title, form.description)}
             >
-              Create petition
+              {saving ? 'Creating…' : 'Create petition'}
             </button>
           </div>
+        </div>
+      )}
+
+      {!showNew && error && (
+        <div role="alert" style={{
+          fontSize: 13, color: C.danger, background: C.dangerBg, padding: '8px 10px',
+          borderRadius: C.radiusSm, marginBottom: 14
+        }}>
+          {error}
         </div>
       )}
 
@@ -76,11 +119,14 @@ export default function PetitionsPanel({ projectId }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, color: C.textMuted }}>
                 <span>{p.signatures} / {p.target} signatures ({pct}%) · by {p.createdBy} · {p.createdAt}</span>
                 <button
-                  style={p.signedByMe ? button('outline') : button('primary')}
-                  disabled={p.signedByMe}
+                  style={{
+                    ...(p.signedByMe ? button('outline') : button('primary')),
+                    ...(signingId === p.id ? { opacity: 0.7, cursor: 'wait' } : {})
+                  }}
+                  disabled={p.signedByMe || signingId === p.id}
                   onClick={() => sign(p.id)}
                 >
-                  {p.signedByMe ? '✓ Signed' : 'Sign petition'}
+                  {p.signedByMe ? '✓ Signed' : signingId === p.id ? 'Signing…' : 'Sign petition'}
                 </button>
               </div>
             </div>

@@ -159,8 +159,13 @@ export default function ChatTab({ projectId }) {
   // right (see ForumTab.jsx).
   const deleteMessage = async (messageId) => {
     if (!window.confirm('Delete this message? This cannot be undone.')) return
-    await api.deleteChatMessage(projectId, active, messageId)
-    setMessages(m => m.filter(msg => msg.id !== messageId))
+    try {
+      await api.deleteChatMessage(projectId, active, messageId)
+      setMessages(m => m.filter(msg => msg.id !== messageId))
+      setSendError('')
+    } catch (err) {
+      setSendError(err.message || "We couldn't delete that message just now. Please try again.")
+    }
   }
 
   // Residents-only platform — every verified resident can post in every channel.

@@ -42,6 +42,10 @@ export default function ForumTab({ projectId }) {
   const [editingId, setEditingId] = useState(null) // thread id currently open in the inline editor
   const [editDraft, setEditDraft] = useState({ title: '', body: '' })
   const [editError, setEditError] = useState('')
+  // For the one-tap actions below (upvote, poll vote, delete) rather than
+  // loadError, which also gates the "no threads yet" empty state — a failed
+  // upvote must not make a populated list look empty.
+  const [actionError, setActionError] = useState('')
   const { attachments, addFiles, removeAttachment, error: uploadError, reset: resetAttachments } = useAttachments()
 
   // Which list is on screen. A page that arrives after the category changed, or
@@ -97,13 +101,23 @@ export default function ForumTab({ projectId }) {
   const editBlocked = hasSensitiveContent(editDraft.title, editDraft.body)
 
   const upvote = async (threadId) => {
-    const updated = await api.upvoteThread(projectId, threadId)
-    setThreads(ts => ts.map(t => t.id === updated.id ? updated : t))
+    try {
+      const updated = await api.upvoteThread(projectId, threadId)
+      setThreads(ts => ts.map(t => t.id === updated.id ? updated : t))
+      setActionError('')
+    } catch (err) {
+      setActionError(err.message || "We couldn't record that upvote just now. Please try again.")
+    }
   }
 
   const voteThreadPoll = async (threadId, optionId) => {
-    const updated = await api.voteThreadPoll(projectId, threadId, optionId)
-    setThreads(ts => ts.map(t => t.id === updated.id ? updated : t))
+    try {
+      const updated = await api.voteThreadPoll(projectId, threadId, optionId)
+      setThreads(ts => ts.map(t => t.id === updated.id ? updated : t))
+      setActionError('')
+    } catch (err) {
+      setActionError(err.message || "We couldn't record that vote just now. Please try again.")
+    }
   }
 
   // A post can be corrected once. The allowance is deliberately small: it covers
@@ -139,8 +153,13 @@ export default function ForumTab({ projectId }) {
   // you contributed deleted, not just your verification document.
   const deleteThread = async (threadId) => {
     if (!window.confirm('Delete this post? This cannot be undone.')) return
-    await api.deleteThread(projectId, threadId)
-    setThreads(ts => ts.filter(t => t.id !== threadId))
+    try {
+      await api.deleteThread(projectId, threadId)
+      setThreads(ts => ts.filter(t => t.id !== threadId))
+      setActionError('')
+    } catch (err) {
+      setActionError(err.message || "We couldn't delete that post just now. Please try again.")
+    }
   }
 
   // --- poll builder helpers (form) ---
@@ -323,6 +342,11 @@ export default function ForumTab({ projectId }) {
         {loadError && (
           <div role="alert" style={{ ...card, padding: 14, marginBottom: 12, color: C.danger, fontSize: 14 }}>
             {loadError}
+          </div>
+        )}
+        {actionError && (
+          <div role="alert" style={{ ...card, padding: 14, marginBottom: 12, color: C.danger, fontSize: 14 }}>
+            {actionError}
           </div>
         )}
 
