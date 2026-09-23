@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
-import { C, card, badge, button } from '../../theme'
+import { C, card, badge } from '../../theme'
 
 const tierStyle = (tier) => {
   if (tier === 'Premium') return badge(C.accent, C.accentLight)
@@ -12,7 +12,7 @@ export default function VendorsTab({ projectId }) {
   const [vendors, setVendors] = useState([])
   const [category, setCategory] = useState('All')
 
-  useEffect(() => { api.getVendors(projectId).then(setVendors) }, [projectId])
+  useEffect(() => { api.getVendors(projectId).then(setVendors).catch(() => setVendors([])) }, [projectId])
 
   const categories = ['All', ...new Set(vendors.map(v => v.category))]
   const filtered = category === 'All' ? vendors : vendors.filter(v => v.category === category)
@@ -70,7 +70,6 @@ export default function VendorsTab({ projectId }) {
               {v.ssmVerified && <span style={badge(C.success, C.successBg)}>✓ Verified Business</span>}
               {v.ownerRecommended && <span style={badge(C.accent, C.accentLight)}>👍 Owner Recommended</span>}
             </div>
-            <button style={{ ...button('outline'), width: '100%' }}>View profile & contact</button>
           </div>
         ))}
         {filtered.length === 0 && (

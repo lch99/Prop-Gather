@@ -12,7 +12,7 @@ const categoryColor = (cat) => {
 export default function DocumentsPanel({ projectId }) {
   const [docs, setDocs] = useState([])
 
-  useEffect(() => { api.getDocuments(projectId).then(setDocs) }, [projectId])
+  useEffect(() => { api.getDocuments(projectId).then(setDocs).catch(() => setDocs([])) }, [projectId])
 
   return (
     <div>
@@ -36,7 +36,12 @@ export default function DocumentsPanel({ projectId }) {
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span style={categoryColor(d.category)}>{d.category}</span>
-              <button style={{ border: 'none', background: 'none', color: C.blue, fontWeight: 600, fontSize: 13 }}>Download</button>
+              {/* There's no file behind a document yet — the backend has no upload
+                  endpoint or storage column for this table (see documents.js). A
+                  "Download" link with no handler looked clickable and did nothing,
+                  so say what's actually true instead of faking the affordance;
+                  mirrors ReferencesTab's "File coming soon" for the same gap. */}
+              <span style={{ fontSize: 12.5, color: C.textFaint, fontStyle: 'italic' }}>No file attached yet</span>
             </div>
           </div>
         ))}

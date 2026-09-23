@@ -25,6 +25,8 @@ export default function AdminReferencesPage() {
   const [publishError, setPublishError] = useState('')
   const [projectsLoaded, setProjectsLoaded] = useState(false)
   const [projectsError, setProjectsError] = useState('')
+  const [listError, setListError] = useState('')
+  const [removingId, setRemovingId] = useState(null)
   const { attachments, addFiles, removeAttachment, error: uploadError, reset } = useAttachments()
 
   // With no community selected there are no references to load, so every path
@@ -94,8 +96,16 @@ export default function AdminReferencesPage() {
 
   const remove = async (refId, title) => {
     if (!window.confirm(`Remove "${title}"? Residents will no longer see this reference.`)) return
-    await api.deleteReference(projectId, refId)
-    load()
+    setRemovingId(refId)
+    setListError('')
+    try {
+      await api.deleteReference(projectId, refId)
+      load()
+    } catch (err) {
+      setListError(err.message || `We couldn't remove "${title}" just now. Please try again.`)
+    } finally {
+      setRemovingId(null)
+    }
   }
 
   const selectedProject = projects.find(p => p.id === projectId)
@@ -238,6 +248,14 @@ export default function AdminReferencesPage() {
             Published{selectedProject ? ` — ${selectedProject.name}` : ''}
             {refs?.length > 0 && <span style={{ color: C.textFaint, fontWeight: 400 }}> ({refs.length})</span>}
           </h2>
+          {listError && (
+            <div role="alert" style={{
+              fontSize: 13.5, color: C.danger, background: C.dangerBg, padding: '9px 12px',
+              borderRadius: C.radiusSm, marginBottom: 12
+            }}>
+              {listError}
+            </div>
+          )}
           {refs === null ? (
             <div style={{ display: 'grid', gap: 12 }}>
               {[0, 1].map(i => <div key={i} className="pg-skel" style={{ height: 72, borderRadius: C.radius }} />)}
@@ -270,9 +288,13 @@ export default function AdminReferencesPage() {
                     </div>
                     <button
                       onClick={() => remove(item.id, item.title)}
-                      style={{ ...button('outline'), color: C.danger, padding: '7px 12px', fontSize: 13 }}
+                      disabled={removingId === item.id}
+                      style={{
+                        ...button('outline'), color: C.danger, padding: '7px 12px', fontSize: 13,
+                        ...(removingId === item.id ? { opacity: 0.6, cursor: 'wait' } : {})
+                      }}
                     >
-                      Remove
+                      {removingId === item.id ? 'Removing…' : 'Remove'}
                     </button>
                   </div>
                 )
