@@ -260,6 +260,19 @@ input:focus, textarea:focus, select:focus {
   }
 }
 
+/* register page: the "how it works" sidebar. Its 3 cards are much shorter than
+   the step card next to them (especially step 2, with the proof-document
+   example), so left unpinned it finishes a screen early and leaves a tall dead
+   gap on the right. Sticky only from the breakpoint where the grid is actually
+   two columns — pinned in a single-column stack would just chase the footer. */
+@media (min-width: 768px) {
+  .pg-register-aside {
+    position: sticky;
+    top: 84px;
+    align-self: start;
+  }
+}
+
 /* discover page: stats row + request button */
 .pg-hero-bottom {
   display: flex;

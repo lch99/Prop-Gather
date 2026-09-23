@@ -16,6 +16,10 @@ const docByTier = {
 
 const MIN_PASSWORD = 8
 
+// Loose on purpose — just enough to catch "forgot the @" before a round trip to
+// the server, not to second-guess the backend's real (zod) email validation.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 export default function RegisterPage() {
   const [searchParams] = useSearchParams()
   // Someone already signed in is adding a second community, so step 1 skips
@@ -43,12 +47,14 @@ export default function RegisterPage() {
   const submitRegistration = async () => {
     // Names the fields that are actually missing — "fill in all fields" sent
     // people hunting through the form, and phone isn't required here anyway.
+    // Trimmed, so a name or unit of pure whitespace still counts as missing
+    // rather than silently becoming the stored value.
     const missing = [
-      [!user && !form.name, 'your full name'],
-      [!user && !form.email, 'your email'],
+      [!user && !form.name.trim(), 'your full name'],
+      [!user && !form.email.trim(), 'your email'],
       [!user && !form.password, 'a password'],
       [!form.projectId, 'your property project'],
-      [!form.unit, 'your unit / lot number']
+      [!form.unit.trim(), 'your unit / lot number']
     ].filter(([isMissing]) => isMissing).map(([, label]) => label)
 
     if (missing.length) {
@@ -56,6 +62,10 @@ export default function RegisterPage() {
         ? missing[0]
         : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`
       setError(`Please add ${list} to continue.`)
+      return
+    }
+    if (!user && !EMAIL_RE.test(form.email.trim())) {
+      setError('Please enter a valid email address.')
       return
     }
     if (!user && form.password.length < MIN_PASSWORD) {
@@ -69,7 +79,7 @@ export default function RegisterPage() {
     if (!user) {
       setBusy(true)
       try {
-        await signup({ name: form.name, email: form.email, password: form.password })
+        await signup({ name: form.name.trim(), email: form.email.trim(), password: form.password })
       } catch (e) {
         setError(
           e.status === 409
@@ -108,7 +118,7 @@ export default function RegisterPage() {
       // see api.submitApplication. Ticking the box above is what allows it.
       const app = await api.submitApplication({
         projectId: form.projectId,
-        unit: form.unit,
+        unit: form.unit.trim(),
         tier: form.tier,
         phone: form.phone,
         document: attachments[0].name,
@@ -464,7 +474,7 @@ export default function RegisterPage() {
         )}
       </div>
 
-      <div style={{ display: 'grid', gap: 16 }}>
+      <div className="pg-register-aside" style={{ display: 'grid', gap: 16 }}>
         <div style={{ ...card, padding: 20 }}>
           <h3 style={{ margin: '0 0 10px', color: C.navy, fontSize: 16 }}>Required document</h3>
           <p style={{ margin: 0, fontSize: 13, color: C.textMuted, lineHeight: 1.6 }}>
