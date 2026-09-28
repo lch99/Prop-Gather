@@ -191,8 +191,9 @@ no row, so neither deletion nor erasure can find it. The frontend reuses an
 already-uploaded file when a failed submit is retried, which keeps this rare.
 
 Lists that carry attachments are paginated too: `GET .../forum` (`?limit=`,
-default 20, `?before=<threadId>`, `?category=`) and `GET
-.../chat/:channel/messages` (`?limit=`, default 50, `?before=<messageId>`). A
+default 20, `?before=<threadId>`, `?category=`), `GET
+.../chat/:channel/messages` (`?limit=`, default 50, `?before=<messageId>`) and
+`GET .../forum/:threadId/replies` (same shape as chat, `?before=<replyId>`). A
 page shorter than the limit is the last one.
 
 **Required env vars** (`.env.example`): `AWS_REGION`, `AWS_S3_BUCKET`,
@@ -359,7 +360,9 @@ reports) can be edited **exactly once, by its author**. `edited_at` (added in
 `0003_content_edits.sql`) is both the "allowance spent" flag the routes check and
 the timestamp returned as `editedAt` — a changed post always renders as
 "(edited)", because silently rewriting something people have already replied to
-would be worse than not allowing edits at all. A second attempt gets a 409.
+would be worse than not allowing edits at all. A second attempt gets a 409 — and
+the UPDATE itself is guarded on `edited_at IS NULL`, so two saves sent at once
+can't both land. Forum replies have no edit at all, only delete.
 
 - **Author only, never admins.** An admin quietly rewriting a resident's words is
   worse than removing the post: a deletion is obvious, an edit isn't. Admins keep
@@ -378,8 +381,8 @@ would be worse than not allowing edits at all. A second attempt gets a 409.
 
 ### Who can delete what
 
-Resident-authored content (forum threads, chat messages, petitions, defects) is
-deletable by **its author or an admin**. Management-published content
+Resident-authored content (forum threads and replies, chat messages, petitions,
+defects) is deletable by **its author or an admin**. Management-published content
 (references, documents, polls) is **admin-only** — there is no resident author
 who could reasonably own it. Every delete is written to `audit_log` with a
 `deletedBySelf` flag so admin action on someone else's content is visible.

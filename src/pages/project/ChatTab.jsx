@@ -17,8 +17,29 @@ const channelIcons = {
 // time it was opened. Older ones load when the resident asks for them.
 const PAGE_SIZE = 50
 
+// In the resident's own timezone — the server sends the raw timestamp because
+// it formatted in its own (UTC), eight hours off. Today's messages show just the
+// time; older ones carry the date too, or "14:32" is ambiguous.
+function messageTime(createdAt) {
+  const d = new Date(createdAt)
+  if (Number.isNaN(d.getTime())) return ''
+  const time = d.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const now = new Date()
+  if (d.toDateString() === now.toDateString()) return time
+  const date = d.toLocaleDateString('en-MY', {
+    day: 'numeric', month: 'short', ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {})
+  })
+  return `${date}, ${time}`
+}
+
+// Enter sends, except while an input method is composing: typing Chinese (or
+// any IME script) uses Enter to confirm the characters, and Safari reports that
+// keypress as a plain Enter.
+const isSubmitEnter = (e) => e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229
+
 export default function ChatTab({ projectId }) {
   const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [channels, setChannels] = useState([])
   const [active, setActive] = useState('general')
   const [messages, setMessages] = useState([])
@@ -190,15 +211,11 @@ export default function ChatTab({ projectId }) {
             <span>{channelIcons[ch] || `# ${ch}`}</span>
           </button>
         ))}
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-          <button style={{ ...button('outline'), width: '100%', fontSize: 12 }}>+ Propose channel</button>
-        </div>
       </div>
 
       <div className="pg-chat-panel" style={{ ...card, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontWeight: 700, color: C.navy }}>{channelIcons[active] || `# ${active}`}</div>
-          <span style={badge(C.success, C.successBg)}>● 12 online</span>
         </div>
         <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {hasEarlier && (
@@ -228,27 +245,28 @@ export default function ChatTab({ projectId }) {
                 {m.unit && m.unit !== '-' && <span style={{ fontSize: 12, color: C.textMuted }}>{m.unit}</span>}
                 <span style={{ ...badge(tierColor(m.tier), `${tierColor(m.tier)}1a`), fontSize: 11 }}>{m.tier}</span>
                 {m.verified && <span style={{ fontSize: 11, color: C.success }}>✓</span>}
-                <span style={{ fontSize: 11, color: C.textFaint, marginLeft: 'auto' }}>{m.time}</span>
-                {m.sender === user?.name && editingId !== m.id && (
-                  <>
-                    {/* One edit per message — once spent, only delete remains. */}
-                    {!m.editedAt && m.text && (
-                      <button
-                        onClick={() => startEdit(m)}
-                        title="Edit your message (once only)"
-                        style={{ border: 'none', background: 'none', color: C.blue, fontSize: 12, cursor: 'pointer', padding: 0 }}
-                      >
-                        ✏️
-                      </button>
-                    )}
-                    <button
-                      onClick={() => deleteMessage(m.id)}
-                      title="Delete your message"
-                      style={{ border: 'none', background: 'none', color: C.danger, fontSize: 12, cursor: 'pointer', padding: 0 }}
-                    >
-                      🗑️
-                    </button>
-                  </>
+                <span style={{ fontSize: 11, color: C.textFaint, marginLeft: 'auto' }} title={new Date(m.createdAt).toLocaleString('en-MY')}>{messageTime(m.createdAt)}</span>
+                {/* One edit per message, your own — once spent, only delete remains. */}
+                {m.mine && !m.editedAt && m.text && editingId !== m.id && (
+                  <button
+                    onClick={() => startEdit(m)}
+                    title="Edit your message (once only)"
+                    aria-label="Edit your message"
+                    style={{ border: 'none', background: 'none', color: C.blue, fontSize: 12, cursor: 'pointer', padding: 0 }}
+                  >
+                    ✏️
+                  </button>
+                )}
+                {/* Your own message, or any message for an admin moderating. */}
+                {(m.mine || isAdmin) && editingId !== m.id && (
+                  <button
+                    onClick={() => deleteMessage(m.id)}
+                    title={m.mine ? 'Delete your message' : 'Remove this message (admin)'}
+                    aria-label={m.mine ? 'Delete your message' : 'Remove this message'}
+                    style={{ border: 'none', background: 'none', color: C.danger, fontSize: 12, cursor: 'pointer', padding: 0 }}
+                  >
+                    🗑️
+                  </button>
                 )}
               </div>
               {editingId === m.id ? (
@@ -256,7 +274,7 @@ export default function ChatTab({ projectId }) {
                   <input
                     value={editDraft}
                     onChange={e => setEditDraft(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') saveEdit(m.id); if (e.key === 'Escape') cancelEdit() }}
+                    onKeyDown={e => { if (isSubmitEnter(e)) saveEdit(m.id); if (e.key === 'Escape') cancelEdit() }}
                     autoFocus
                     style={{ padding: '8px 12px', border: `1px solid ${C.blue}`, borderRadius: C.radiusSm, fontSize: 14 }}
                   />
@@ -327,7 +345,7 @@ export default function ChatTab({ projectId }) {
             <input
               value={text}
               onChange={e => setText(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && send()}
+              onKeyDown={e => isSubmitEnter(e) && send()}
               placeholder="Type a message..."
               style={{ flex: 1, padding: '10px 12px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 14, background: '#fff' }}
             />

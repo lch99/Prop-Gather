@@ -93,25 +93,31 @@ const demoResidents = [
 
 const forumThreads = {
   p1: [
-    { id: 'f1-2', category: 'Building Management', title: 'Reminder: renovation hours & contractor registration', author: 'u_tanw', pinned: true, replies: 6, createdAt: '2026-06-01T08:00:00+08:00', body: 'Sharing a reminder from the lobby notice: renovation works are permitted 9am–6pm on weekdays only. Please register your contractors with security before they start.' },
-    { id: 'f1-1', category: 'Defects & Repairs', title: 'Lift in Block B keeps breaking down — anyone else?', author: 'u_tanw', pinned: false, replies: 11, createdAt: '2026-06-10T09:12:00+08:00', body: 'Lift 2 in Block B has broken down 3 times this month. Anyone on higher floors facing the same? Want to log this as a shared defect.' }
+    { id: 'f1-2', category: 'Building Management', title: 'Reminder: renovation hours & contractor registration', author: 'u_tanw', pinned: true, createdAt: '2026-06-01T08:00:00+08:00', body: 'Sharing a reminder from the lobby notice: renovation works are permitted 9am–6pm on weekdays only. Please register your contractors with security before they start.' },
+    { id: 'f1-1', category: 'Defects & Repairs', title: 'Lift in Block B keeps breaking down — anyone else?', author: 'u_tanw', pinned: false, createdAt: '2026-06-10T09:12:00+08:00', body: 'Lift 2 in Block B has broken down 3 times this month. Anyone on higher floors facing the same? Want to log this as a shared defect.' }
   ],
   p2: [
-    { id: 'f2-1', category: 'Building Management', title: 'Reminder: pre-register visitors in the app', author: 'u_nurula', pinned: true, replies: 3, createdAt: '2026-06-02T10:00:00+08:00', body: 'Friendly reminder that you can pre-register your visitors in the app to skip the guardhouse queue — it really helps during the evening peak.' }
+    { id: 'f2-1', category: 'Building Management', title: 'Reminder: pre-register visitors in the app', author: 'u_nurula', pinned: true, createdAt: '2026-06-02T10:00:00+08:00', body: 'Friendly reminder that you can pre-register your visitors in the app to skip the guardhouse queue — it really helps during the evening peak.' }
   ],
   p3: [
-    { id: 'f3-1', category: 'Building Management', title: 'Petition: 24hr guard shift change — 87/100 signatures', author: 'u_wongkl', pinned: false, replies: 22, createdAt: '2026-06-06T12:00:00+08:00', body: 'We are close to our signature target — see Tools > Petitions to sign if you have not already.' }
+    { id: 'f3-1', category: 'Building Management', title: 'Petition: 24hr guard shift change — 87/100 signatures', author: 'u_wongkl', pinned: false, createdAt: '2026-06-06T12:00:00+08:00', body: 'We are close to our signature target — see Tools > Petitions to sign if you have not already.' }
   ],
   p4: [
-    { id: 'f4-1', category: 'Building Management', title: 'Heads up: water disruption 14 June, 10am–4pm', author: 'u_leeph', pinned: true, replies: 7, createdAt: '2026-06-11T08:00:00+08:00', body: 'Sharing the notice from the lobby — scheduled maintenance will affect water supply on 14 June from 10am to 4pm. Please store water in advance.' }
+    { id: 'f4-1', category: 'Building Management', title: 'Heads up: water disruption 14 June, 10am–4pm', author: 'u_leeph', pinned: true, createdAt: '2026-06-11T08:00:00+08:00', body: 'Sharing the notice from the lobby — scheduled maintenance will affect water supply on 14 June from 10am to 4pm. Please store water in advance.' }
   ],
   p5: [
-    { id: 'f5-1', category: 'Contractors & Services', title: 'Recommended aircon contractor for unit servicing', author: 'u_daniel', pinned: false, replies: 3, createdAt: '2026-06-03T16:40:00+08:00', body: 'Used FreshAir Cooling Services last month, quick and reasonably priced. Worth checking the vendor directory.' }
+    { id: 'f5-1', category: 'Contractors & Services', title: 'Recommended aircon contractor for unit servicing', author: 'u_daniel', pinned: false, createdAt: '2026-06-03T16:40:00+08:00', body: 'Used FreshAir Cooling Services last month, quick and reasonably priced. Worth checking the vendor directory.' }
   ],
   p6: [
-    { id: 'f6-1', category: 'Building Management', title: 'Heads up: road resurfacing Phase 2 from 20 June', author: 'u_suresh', pinned: true, replies: 2, createdAt: '2026-06-05T09:00:00+08:00', body: 'Sharing from the notice board — Phase 2 road resurfacing begins 20 June. Expect temporary access restrictions on Jalan Eco Greenview 2 and 3.' }
+    { id: 'f6-1', category: 'Building Management', title: 'Heads up: road resurfacing Phase 2 from 20 June', author: 'u_suresh', pinned: true, createdAt: '2026-06-05T09:00:00+08:00', body: 'Sharing from the notice board — Phase 2 road resurfacing begins 20 June. Expect temporary access restrictions on Jalan Eco Greenview 2 and 3.' }
   ]
 }
+
+// Real reply rows — the reply count a thread shows is counted from these (the
+// seed used to write made-up numbers into forum_threads.replies).
+const forumReplies = [
+  { id: 'r1-1-1', thread: 'f1-1', author: 'u_tanw', createdAt: '2026-06-11T18:30:00+08:00', body: 'Update: management says the lift contractor is coming on Thursday to replace the door sensor.' }
+]
 
 const threadUpvotes = { 'f1-1': 24, 'f1-2': 41, 'f2-1': 29, 'f3-1': 51, 'f4-1': 38, 'f5-1': 9, 'f6-1': 17 }
 
@@ -223,9 +229,12 @@ export async function seed() {
       { ignore: true })
 
     await insertRows(tx, 'forum_threads',
-      ['id', 'project_id', 'category', 'title', 'body', 'author_user_id', 'pinned', 'replies', 'attachments', 'created_at'],
+      ['id', 'project_id', 'category', 'title', 'body', 'author_user_id', 'pinned', 'attachments', 'created_at'],
       Object.entries(forumThreads).flatMap(([projectId, list]) =>
-        list.map(t => [t.id, projectId, t.category, t.title, t.body, t.author, t.pinned ? 1 : 0, t.replies, '[]', t.createdAt])))
+        list.map(t => [t.id, projectId, t.category, t.title, t.body, t.author, t.pinned ? 1 : 0, '[]', t.createdAt])))
+
+    await insertRows(tx, 'forum_replies', ['id', 'thread_id', 'author_user_id', 'body', 'created_at'],
+      forumReplies.map(r => [r.id, r.thread, r.author, r.body, r.createdAt]))
 
     // Fabricate distinct "voter" rows so the seeded upvote count matches the
     // original demo numbers without a real per-user identity per vote.

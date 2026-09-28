@@ -24,8 +24,144 @@ function timeAgo(dateStr) {
   return `${Math.floor(hours / 24)}d ago`
 }
 
+// A thread's replies, opened under it on demand. Loads the newest page, oldest
+// first, like a chat channel; `onCountChange(±1)` keeps the thread's 💬 count in
+// step without re-reading the forum.
+const REPLY_PAGE_SIZE = 50
+
+function ThreadReplies({ projectId, threadId, isAdmin, onCountChange }) {
+  const [replies, setReplies] = useState(null) // null = still loading
+  const [hasEarlier, setHasEarlier] = useState(false)
+  const [loadingEarlier, setLoadingEarlier] = useState(false)
+  const [error, setError] = useState('')
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
+  const blocked = hasSensitiveContent(draft)
+
+  useEffect(() => {
+    let alive = true
+    api.getThreadReplies(projectId, threadId, { limit: REPLY_PAGE_SIZE })
+      .then(page => {
+        if (!alive) return
+        setReplies(page)
+        setHasEarlier(page.length === REPLY_PAGE_SIZE)
+      })
+      .catch(err => {
+        if (!alive) return
+        setReplies([])
+        setError(err.message)
+      })
+    return () => { alive = false }
+  }, [projectId, threadId])
+
+  const loadEarlier = async () => {
+    const oldest = replies?.[0]
+    if (!oldest || loadingEarlier) return
+    setLoadingEarlier(true)
+    try {
+      const page = await api.getThreadReplies(projectId, threadId, { before: oldest.id, limit: REPLY_PAGE_SIZE })
+      setReplies(rs => [...page, ...rs])
+      setHasEarlier(page.length === REPLY_PAGE_SIZE)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoadingEarlier(false)
+    }
+  }
+
+  const send = async () => {
+    const body = draft.trim()
+    if (!body || blocked || sending || replies === null) return
+    setSending(true)
+    setError('')
+    try {
+      const reply = await api.createThreadReply(projectId, threadId, body)
+      setReplies(rs => [...(rs || []), reply])
+      setDraft('')
+      onCountChange(1)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const remove = async (replyId) => {
+    if (!window.confirm('Delete this reply? This cannot be undone.')) return
+    try {
+      await api.deleteThreadReply(projectId, threadId, replyId)
+      setReplies(rs => rs.filter(r => r.id !== replyId))
+      onCountChange(-1)
+      setError('')
+    } catch (err) {
+      setError(err.message || "We couldn't delete that reply just now. Please try again.")
+    }
+  }
+
+  // Also held until the list has loaded, or it could land on top of a reply
+  // posted in the meantime.
+  const cantSend = !draft.trim() || blocked || replies === null
+
+  return (
+    <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 12, paddingTop: 12, display: 'grid', gap: 10 }}>
+      {hasEarlier && (
+        <button onClick={loadEarlier} disabled={loadingEarlier} style={{ ...button('outline'), justifySelf: 'center', fontSize: 12, padding: '6px 12px' }}>
+          {loadingEarlier ? 'Loading…' : 'Show earlier replies'}
+        </button>
+      )}
+      {replies === null && <div style={{ fontSize: 13, color: C.textMuted }}>Loading replies…</div>}
+      {replies?.length === 0 && !error && (
+        <div style={{ fontSize: 13, color: C.textMuted }}>No replies yet — be the first to respond.</div>
+      )}
+      {replies?.map(r => (
+        <div key={r.id} style={{ background: C.bg, borderRadius: C.radiusSm, padding: '10px 12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+            {r.author ? <AuthorLine author={r.author} /> : <span style={{ fontSize: 13, color: C.textMuted }}>Former resident</span>}
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: C.textFaint }}>{timeAgo(r.createdAt)}</span>
+              {(r.mine || isAdmin) && (
+                <button
+                  onClick={() => remove(r.id)}
+                  title={r.mine ? 'Delete your reply' : 'Remove this reply (admin)'}
+                  aria-label={r.mine ? 'Delete your reply' : 'Remove this reply'}
+                  style={{ border: 'none', background: 'none', color: C.danger, fontSize: 13, cursor: 'pointer', padding: 0 }}
+                >
+                  🗑️
+                </button>
+              )}
+            </div>
+          </div>
+          <div style={{ fontSize: 14, color: C.text, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{r.body}</div>
+        </div>
+      ))}
+      {error && <div role="alert" style={{ fontSize: 13, color: C.danger }}>{error}</div>}
+      <textarea
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        placeholder="Write a reply…"
+        aria-label="Write a reply"
+        rows={2}
+        maxLength={2000}
+        style={{ padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 14, resize: 'vertical', width: '100%', boxSizing: 'border-box' }}
+      />
+      <SensitiveContentNotice values={[draft]} />
+      <button
+        onClick={send}
+        disabled={cantSend || sending}
+        style={{
+          ...button('primary'), justifySelf: 'end',
+          ...(cantSend ? { opacity: 0.5, cursor: 'not-allowed' } : sending ? { opacity: 0.7, cursor: 'wait' } : {})
+        }}
+      >
+        {sending ? 'Replying…' : 'Reply'}
+      </button>
+    </div>
+  )
+}
+
 export default function ForumTab({ projectId }) {
   const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [threads, setThreads] = useState([])
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -46,6 +182,7 @@ export default function ForumTab({ projectId }) {
   // loadError, which also gates the "no threads yet" empty state — a failed
   // upvote must not make a populated list look empty.
   const [actionError, setActionError] = useState('')
+  const [openReplies, setOpenReplies] = useState(() => new Set()) // thread ids with replies expanded
   const { attachments, addFiles, removeAttachment, error: uploadError, reset: resetAttachments } = useAttachments()
 
   // Which list is on screen. A page that arrives after the category changed, or
@@ -100,9 +237,12 @@ export default function ForumTab({ projectId }) {
   const blockedByPii = hasSensitiveContent(newThread.title, newThread.body)
   const editBlocked = hasSensitiveContent(editDraft.title, editDraft.body)
 
-  const upvote = async (threadId) => {
+  // A second tap takes the upvote back.
+  const toggleUpvote = async (thread) => {
     try {
-      const updated = await api.upvoteThread(projectId, threadId)
+      const updated = thread.upvotedByMe
+        ? await api.removeThreadUpvote(projectId, thread.id)
+        : await api.upvoteThread(projectId, thread.id)
       setThreads(ts => ts.map(t => t.id === updated.id ? updated : t))
       setActionError('')
     } catch (err) {
@@ -135,7 +275,10 @@ export default function ForumTab({ projectId }) {
   }
 
   const saveEdit = async (threadId) => {
-    if (!editDraft.title.trim() || !editDraft.body.trim()) return
+    if (!editDraft.title.trim() || !editDraft.body.trim()) {
+      setEditError('Your post needs a title and some text.')
+      return
+    }
     if (editBlocked) return
     try {
       const updated = await api.editThread(projectId, threadId, editDraft)
@@ -162,6 +305,16 @@ export default function ForumTab({ projectId }) {
     }
   }
 
+  const toggleReplies = (threadId) => setOpenReplies(open => {
+    const next = new Set(open)
+    if (next.has(threadId)) next.delete(threadId)
+    else next.add(threadId)
+    return next
+  })
+
+  const changeReplyCount = (threadId, delta) =>
+    setThreads(ts => ts.map(t => t.id === threadId ? { ...t, replies: Math.max(0, t.replies + delta) } : t))
+
   // --- poll builder helpers (form) ---
   const addPoll = () => setPoll({ question: '', options: ['', ''] })
   const removePoll = () => setPoll(null)
@@ -176,9 +329,12 @@ export default function ForumTab({ projectId }) {
     let pollPayload = null
     if (poll) {
       const options = poll.options.map(o => o.trim()).filter(Boolean)
-      if (poll.question.trim() && options.length >= 2) {
-        pollPayload = { question: poll.question.trim(), options }
+      // Said rather than quietly posting without the poll the resident built.
+      if (!poll.question.trim() || options.length < 2) {
+        setPostError('Your poll needs a question and at least 2 options. Fill them in, or tap "Remove poll" to post without one.')
+        return
       }
+      pollPayload = { question: poll.question.trim(), options }
     }
     setPosting(true)
     setPostError('')
@@ -409,35 +565,55 @@ export default function ForumTab({ projectId }) {
                 </div>
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                <AuthorLine author={t.author} />
-                <div style={{ display: 'flex', gap: 14, alignItems: 'center', fontSize: 13, color: C.textMuted }}>
-                  <button onClick={() => upvote(t.id)} style={{ border: 'none', background: 'none', color: C.textMuted, fontSize: 13 }}>
+                {t.author ? <AuthorLine author={t.author} /> : <span style={{ fontSize: 13, color: C.textMuted }}>Former resident</span>}
+                <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, color: C.textMuted }}>
+                  <button
+                    onClick={() => toggleUpvote(t)}
+                    aria-pressed={!!t.upvotedByMe}
+                    title={t.upvotedByMe ? 'Remove your upvote' : 'Upvote this post'}
+                    style={{ border: 'none', background: 'none', color: t.upvotedByMe ? C.blue : C.textMuted, fontWeight: t.upvotedByMe ? 700 : 400, fontSize: 13, cursor: 'pointer' }}
+                  >
                     ▲ {t.upvotes}
                   </button>
-                  <span>💬 {t.replies}</span>
-                  {t.author?.name === user?.name && editingId !== t.id && (
-                    <>
-                      {/* One edit per post — once spent, only delete remains. */}
-                      {!t.editedAt && (
-                        <button
-                          onClick={() => startEdit(t)}
-                          title="Edit your post (once only)"
-                          style={{ border: 'none', background: 'none', color: C.blue, fontSize: 13, cursor: 'pointer', padding: 0 }}
-                        >
-                          ✏️
-                        </button>
-                      )}
-                      <button
-                        onClick={() => deleteThread(t.id)}
-                        title="Delete your post"
-                        style={{ border: 'none', background: 'none', color: C.danger, fontSize: 13, cursor: 'pointer', padding: 0 }}
-                      >
-                        🗑️
-                      </button>
-                    </>
+                  <button
+                    onClick={() => toggleReplies(t.id)}
+                    aria-expanded={openReplies.has(t.id)}
+                    style={{ border: 'none', background: 'none', color: openReplies.has(t.id) ? C.blue : C.textMuted, fontSize: 13, cursor: 'pointer' }}
+                  >
+                    💬 {t.replies} {t.replies === 1 ? 'reply' : 'replies'}
+                  </button>
+                  {/* One edit per post, your own — once spent, only delete remains. */}
+                  {t.mine && !t.editedAt && editingId !== t.id && (
+                    <button
+                      onClick={() => startEdit(t)}
+                      title="Edit your post (once only)"
+                      aria-label="Edit your post"
+                      style={{ border: 'none', background: 'none', color: C.blue, fontSize: 13, cursor: 'pointer', padding: 0 }}
+                    >
+                      ✏️
+                    </button>
+                  )}
+                  {/* Your own post, or any post for an admin moderating. */}
+                  {(t.mine || isAdmin) && editingId !== t.id && (
+                    <button
+                      onClick={() => deleteThread(t.id)}
+                      title={t.mine ? 'Delete your post' : 'Remove this post (admin)'}
+                      aria-label={t.mine ? 'Delete your post' : 'Remove this post'}
+                      style={{ border: 'none', background: 'none', color: C.danger, fontSize: 13, cursor: 'pointer', padding: 0 }}
+                    >
+                      🗑️
+                    </button>
                   )}
                 </div>
               </div>
+              {openReplies.has(t.id) && (
+                <ThreadReplies
+                  projectId={projectId}
+                  threadId={t.id}
+                  isAdmin={isAdmin}
+                  onCountChange={(delta) => changeReplyCount(t.id, delta)}
+                />
+              )}
             </div>
           ))}
           {!loading && !loadError && threads.length === 0 && (

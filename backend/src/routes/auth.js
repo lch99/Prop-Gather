@@ -174,6 +174,7 @@ authRouter.delete('/users/:id', requireAuth, requireRole('admin'), wrap(async (r
         await tx.run('DELETE FROM thread_polls WHERE id = ?', [poll.id])
       }
       await tx.run('DELETE FROM forum_upvotes WHERE thread_id = ?', [threadId])
+      await tx.run('DELETE FROM forum_replies WHERE thread_id = ?', [threadId])
     }
     await tx.run('DELETE FROM forum_threads WHERE author_user_id = ?', [target.id])
 
@@ -187,6 +188,7 @@ authRouter.delete('/users/:id', requireAuth, requireRole('admin'), wrap(async (r
 
     // The user's own participation in content owned by others.
     await tx.run('DELETE FROM forum_upvotes WHERE user_id = ?', [target.id])
+    const { changes: replies } = await tx.run('DELETE FROM forum_replies WHERE author_user_id = ?', [target.id])
     await tx.run('DELETE FROM thread_poll_votes WHERE user_id = ?', [target.id])
     await tx.run('DELETE FROM poll_votes WHERE user_id = ?', [target.id])
     await tx.run('DELETE FROM petition_signatures WHERE user_id = ?', [target.id])
@@ -201,7 +203,7 @@ authRouter.delete('/users/:id', requireAuth, requireRole('admin'), wrap(async (r
 
     await tx.run('DELETE FROM users WHERE id = ?', [target.id])
 
-    return { threads: threadIds.length, petitions: petitionIds.length, messages, defects, applications, auditRowsAnonymised: auditRows }
+    return { threads: threadIds.length, replies, petitions: petitionIds.length, messages, defects, applications, auditRowsAnonymised: auditRows }
   })
 
   // Recorded after the delete so the anonymisation pass above can't blank the

@@ -91,6 +91,15 @@ describe('PATCH /api/projects/:projectId/forum/:threadId — one-time edit', () 
     expect(retry.status).toBe(200)
   })
 
+  it('lets only one of two simultaneous edits through', async () => {
+    const created = await authed(app, residentToken).post('/api/projects/p1/forum').send(newThread)
+    const [a, b] = await Promise.all([
+      authed(app, residentToken).patch(`/api/projects/p1/forum/${created.body.id}`).send({ title: 'A', body: 'a' }),
+      authed(app, residentToken).patch(`/api/projects/p1/forum/${created.body.id}`).send({ title: 'B', body: 'b' })
+    ])
+    expect([a.status, b.status].sort()).toEqual([200, 409])
+  })
+
   it('leaves upvotes and the poll untouched', async () => {
     const created = await authed(app, residentToken).post('/api/projects/p1/forum')
       .send({ ...newThread, poll: { question: 'Q?', options: ['A', 'B'] } })

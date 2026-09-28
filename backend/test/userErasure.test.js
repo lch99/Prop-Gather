@@ -58,12 +58,16 @@ describe('DELETE /api/auth/users/:id — PDPA erasure', () => {
 
     // participation in content owned by others
     await authed(app, user.token).post('/api/projects/p1/forum/f1-1/upvote')
+    await authed(app, user.token).post('/api/projects/p1/forum/f1-1/replies').send({ body: 'my reply' })
+    // someone else's reply on the user's own thread goes with the thread
+    const residentReplier = await login(app, RESIDENT.email, RESIDENT.password)
+    await authed(app, residentReplier).post(`/api/projects/p1/forum/${thread.body.id}/replies`).send({ body: 'reply to them' })
     const polls = await authed(app, user.token).get('/api/projects/p1/polls')
     await authed(app, user.token).post(`/api/projects/p1/polls/${polls.body[0].id}/vote`).send({ optionId: polls.body[0].options[0].id })
 
     const res = await authed(app, adminToken).delete(`/api/auth/users/${user.userId}`)
     expect(res.status).toBe(200)
-    expect(res.body.erased).toMatchObject({ threads: 1, petitions: 1, messages: 1, defects: 1, applications: 1 })
+    expect(res.body.erased).toMatchObject({ threads: 1, replies: 1, petitions: 1, messages: 1, defects: 1, applications: 1 })
 
     // everything they authored is gone
     const residentToken = await login(app, RESIDENT.email, RESIDENT.password)
@@ -82,6 +86,11 @@ describe('DELETE /api/auth/users/:id — PDPA erasure', () => {
     // their vote no longer counts toward another user's thread
     const others = await authed(app, residentToken).get('/api/projects/p1/forum')
     expect(others.body.find(t => t.id === 'f1-1').upvotes).toBe(24) // back to the seeded count
+
+    // and their reply on someone else's thread is gone
+    const replies = await authed(app, residentToken).get('/api/projects/p1/forum/f1-1/replies')
+    expect(replies.body.map(r => r.body)).not.toContain('my reply')
+    expect(others.body.find(t => t.id === 'f1-1').replies).toBe(1) // the seeded one
   })
 
   it('leaves other residents\' content untouched', async () => {
