@@ -163,9 +163,14 @@ authRouter.delete('/users/:id', requireAuth, requireRole('admin'), wrap(async (r
   const attachmentKeysToDelete = contentRows.flat().flatMap(r => attachmentKeys(r.attachments))
 
   const counts = await withTransaction(async (tx) => {
-    // Threads authored by the user take their poll and upvotes with them.
-    const threadRows = await tx.all('SELECT id FROM forum_threads WHERE author_user_id = ?', [target.id])
+    // Threads authored by the user take their poll, upvotes and replies with
+    // them — including other residents' replies, which are counted separately
+    // so the audit entry says whose content went. FOR UPDATE makes a reply
+    // posted concurrently wait for this transaction (see POST .../replies).
+    const threadRows = await tx.all('SELECT id FROM forum_threads WHERE author_user_id = ? FOR UPDATE', [target.id])
     const threadIds = threadRows.map(r => r.id)
+    let replies = 0
+    let repliesByOthers = 0
     for (const threadId of threadIds) {
       const poll = await tx.get('SELECT id FROM thread_polls WHERE thread_id = ?', [threadId])
       if (poll) {
@@ -174,7 +179,10 @@ authRouter.delete('/users/:id', requireAuth, requireRole('admin'), wrap(async (r
         await tx.run('DELETE FROM thread_polls WHERE id = ?', [poll.id])
       }
       await tx.run('DELETE FROM forum_upvotes WHERE thread_id = ?', [threadId])
-      await tx.run('DELETE FROM forum_replies WHERE thread_id = ?', [threadId])
+      const others = await tx.get('SELECT COUNT(*) AS n FROM forum_replies WHERE thread_id = ? AND author_user_id <> ?', [threadId, target.id])
+      repliesByOthers += Number(others.n)
+      const { changes } = await tx.run('DELETE FROM forum_replies WHERE thread_id = ?', [threadId])
+      replies += changes
     }
     await tx.run('DELETE FROM forum_threads WHERE author_user_id = ?', [target.id])
 
@@ -188,7 +196,8 @@ authRouter.delete('/users/:id', requireAuth, requireRole('admin'), wrap(async (r
 
     // The user's own participation in content owned by others.
     await tx.run('DELETE FROM forum_upvotes WHERE user_id = ?', [target.id])
-    const { changes: replies } = await tx.run('DELETE FROM forum_replies WHERE author_user_id = ?', [target.id])
+    const { changes: ownRepliesElsewhere } = await tx.run('DELETE FROM forum_replies WHERE author_user_id = ?', [target.id])
+    replies += ownRepliesElsewhere
     await tx.run('DELETE FROM thread_poll_votes WHERE user_id = ?', [target.id])
     await tx.run('DELETE FROM poll_votes WHERE user_id = ?', [target.id])
     await tx.run('DELETE FROM petition_signatures WHERE user_id = ?', [target.id])
@@ -203,7 +212,7 @@ authRouter.delete('/users/:id', requireAuth, requireRole('admin'), wrap(async (r
 
     await tx.run('DELETE FROM users WHERE id = ?', [target.id])
 
-    return { threads: threadIds.length, replies, petitions: petitionIds.length, messages, defects, applications, auditRowsAnonymised: auditRows }
+    return { threads: threadIds.length, replies, repliesByOthers, petitions: petitionIds.length, messages, defects, applications, auditRowsAnonymised: auditRows }
   })
 
   // Recorded after the delete so the anonymisation pass above can't blank the

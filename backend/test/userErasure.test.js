@@ -67,7 +67,8 @@ describe('DELETE /api/auth/users/:id — PDPA erasure', () => {
 
     const res = await authed(app, adminToken).delete(`/api/auth/users/${user.userId}`)
     expect(res.status).toBe(200)
-    expect(res.body.erased).toMatchObject({ threads: 1, replies: 1, petitions: 1, messages: 1, defects: 1, applications: 1 })
+    // 'my reply' elsewhere + 'reply to them' on their own thread
+    expect(res.body.erased).toMatchObject({ threads: 1, replies: 2, repliesByOthers: 1, petitions: 1, messages: 1, defects: 1, applications: 1 })
 
     // everything they authored is gone
     const residentToken = await login(app, RESIDENT.email, RESIDENT.password)

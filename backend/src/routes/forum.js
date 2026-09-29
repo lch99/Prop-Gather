@@ -317,6 +317,11 @@ forumRouter.delete('/:threadId', requireAuth, requireMembership, wrap(async (req
   if (thread.author_user_id !== req.user.id && req.user.role !== 'admin') return next(forbidden('You can only delete your own posts.'))
 
   await withTransaction(async (tx) => {
+    // Locked first so a reply being posted right now either lands before this
+    // (and is deleted below) or waits and then finds the thread gone — see
+    // POST .../replies. Without it a reply slipping in between the two deletes
+    // fails the forum_threads delete on its foreign key.
+    await tx.get('SELECT id FROM forum_threads WHERE id = ? FOR UPDATE', [thread.id])
     const poll = await tx.get('SELECT id FROM thread_polls WHERE thread_id = ?', [thread.id])
     if (poll) {
       await tx.run('DELETE FROM thread_poll_votes WHERE poll_id = ?', [poll.id])
@@ -411,12 +416,18 @@ forumRouter.get('/:threadId/replies', requireAuth, requireMembership, wrap(async
 
 forumRouter.post('/:threadId/replies', requireAuth, requireMembership, validate(replySchema), blockSensitiveContent('body'), wrap(async (req, res, next) => {
   const db = getDb()
-  const thread = await findThread(db, req)
-  if (!thread) return next(notFound("We couldn't find that post — it may have been removed."))
-
   const replyId = id('rep')
-  await db.run('INSERT INTO forum_replies (id, thread_id, author_user_id, body, created_at) VALUES (?, ?, ?, ?, ?)',
-    [replyId, thread.id, req.user.id, req.body.body, new Date().toISOString()])
+  // FOR SHARE holds the thread against a concurrent delete (which takes FOR
+  // UPDATE on it) until the reply is in, so the two serialise instead of
+  // racing: a delete already under way makes this wait and then 404.
+  const inserted = await withTransaction(async (tx) => {
+    const thread = await tx.get('SELECT id FROM forum_threads WHERE id = ? AND project_id = ? FOR SHARE', [req.params.threadId, req.params.projectId])
+    if (!thread) return false
+    await tx.run('INSERT INTO forum_replies (id, thread_id, author_user_id, body, created_at) VALUES (?, ?, ?, ?, ?)',
+      [replyId, thread.id, req.user.id, req.body.body, new Date().toISOString()])
+    return true
+  })
+  if (!inserted) return next(notFound("We couldn't find that post — it may have been removed."))
 
   res.status(201).json(serializeReply(await db.get(`${REPLY_SELECT} WHERE r.id = ?`, [replyId]), req.user))
 }))
