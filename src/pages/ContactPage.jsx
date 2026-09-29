@@ -1,5 +1,6 @@
 import { C, card, button } from '../theme'
 import Seo from '../seo'
+import { useT } from '../i18n'
 
 const Channel = ({ icon, title, children }) => (
   <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 24 }}>
@@ -16,12 +17,13 @@ const Channel = ({ icon, title, children }) => (
 )
 
 export default function ContactPage() {
+  const t = useT()
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: 'clamp(20px, 5vw, 40px) clamp(16px, 5vw, 28px)' }}>
       <Seo
         path="/contact"
-        title="Contact us"
-        description="Questions about your account, verification, or your personal data? Email PropGather support — we aim to reply within 2 business days."
+        title={t('Contact us')}
+        description={t('Questions about your account, verification, or your personal data? Email PropGather support — we aim to reply within 2 business days.')}
         jsonLd={{
           '@context': 'https://schema.org',
           '@type': 'ContactPage',
@@ -39,47 +41,46 @@ export default function ContactPage() {
             justifyContent: 'center', fontSize: 24
           }}>💬</div>
           <h1 style={{ color: C.navy, fontSize: 'clamp(22px, 5vw, 28px)', margin: 0, lineHeight: 1.2 }}>
-            Contact Us
+            {t('Contact Us')}
           </h1>
         </div>
         <p style={{ color: C.textMuted, fontSize: 14.5, margin: 0, lineHeight: 1.7, maxWidth: 520 }}>
-          Have a question, found an issue, or need help with your account?
-          Reach us through any of the channels below and we'll get back to you.
+          {t("Have a question, found an issue, or need help with your account? Reach us through any of the channels below and we'll get back to you.")}
         </p>
       </div>
 
       {/* Channels card */}
       <div style={{ ...card, padding: 'clamp(18px, 5vw, 28px)' }}>
-        <Channel icon="✉️" title="Email us">
-          For general questions, account help, or to report a problem:<br />
+        <Channel icon="✉️" title={t('Email us')}>
+          {t('For general questions, account help, or to report a problem:')}<br />
           <a href="mailto:Supportpropgather@gmail.com" style={{ color: C.blue, fontWeight: 700 }}>
             Supportpropgather@gmail.com
           </a>
         </Channel>
 
-        <Channel icon="🔒" title="Privacy & data requests">
-          For anything about your personal data or document removal:<br />
+        <Channel icon="🔒" title={t('Privacy & data requests')}>
+          {t('For anything about your personal data or document removal:')}<br />
           <a href="mailto:infopropgather@gmail.com" style={{ color: C.blue, fontWeight: 700 }}>
             infopropgather@gmail.com
           </a>
         </Channel>
 
-        <Channel icon="🏢" title="Verification & community access">
-          Trouble joining your community or getting verified? Email us with your project
-          name and unit/lot number.<br />
+        <Channel icon="🏢" title={t('Verification & community access')}>
+          {t('Trouble joining your community or getting verified? Email us with your project name and unit/lot number.')}<br />
           <a href="mailto:Supportpropgather@gmail.com" style={{ color: C.blue, fontWeight: 700 }}>
             Supportpropgather@gmail.com
           </a>
         </Channel>
 
-        <Channel icon="⏱️" title="Response time">
-          We aim to reply within <strong>2 business days</strong>. Include as much detail
-          as you can so we can help you faster.
+        <Channel icon="⏱️" title={t('Response time')}>
+          {t('We aim to reply within {time}. Include as much detail as you can so we can help you faster.', {
+            time: <strong>{t('2 business days')}</strong>
+          })}
         </Channel>
 
         <a href="mailto:Supportpropgather@gmail.com" style={{ display: 'block', marginTop: 8 }}>
           <button style={{ ...button('primary'), width: '100%', padding: '13px 18px', fontSize: 15 }}>
-            ✉️&nbsp; Email our support team
+            ✉️&nbsp; {t('Email our support team')}
           </button>
         </a>
       </div>

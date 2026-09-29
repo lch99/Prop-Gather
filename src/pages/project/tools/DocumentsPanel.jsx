@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../../api'
 import { C, card, badge } from '../../../theme'
+import { useT } from '../../../i18n'
+import { LoadingInline } from '../../../components/Loading'
 
 const categoryColor = (cat) => {
   if (cat === 'By-Laws') return badge(C.accent, C.accentLight)
@@ -10,19 +12,21 @@ const categoryColor = (cat) => {
 }
 
 export default function DocumentsPanel({ projectId }) {
-  const [docs, setDocs] = useState([])
+  const t = useT()
+  const [docs, setDocs] = useState(null) // null = still loading
 
   useEffect(() => { api.getDocuments(projectId).then(setDocs).catch(() => setDocs([])) }, [projectId])
 
   return (
     <div>
-      <h3 style={{ margin: '0 0 4px', color: C.navy }}>Document Library</h3>
+      <h3 style={{ margin: '0 0 4px', color: C.navy }}>{t('Document Library')}</h3>
       <p style={{ margin: '0 0 16px', color: C.textMuted, fontSize: 13 }}>
-        House rules, by-laws, meeting minutes, circulars, and contractor warranties — shared and kept up to date by verified residents.
+        {t('House rules, by-laws, meeting minutes, circulars, and contractor warranties — shared and kept up to date by verified residents.')}
       </p>
 
       <div style={{ ...card, overflow: 'hidden' }}>
-        {docs.map((d, i) => (
+        {docs === null && <LoadingInline />}
+        {docs?.map((d, i) => (
           <div key={d.id} style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             padding: '14px 16px', borderTop: i === 0 ? 'none' : `1px solid ${C.border}`, flexWrap: 'wrap', gap: 8
@@ -31,22 +35,22 @@ export default function DocumentsPanel({ projectId }) {
               <span style={{ fontSize: 20 }}>📄</span>
               <div>
                 <div style={{ fontWeight: 600, color: C.navy }}>{d.title}</div>
-                <div style={{ fontSize: 12, color: C.textMuted }}>Uploaded by {d.uploadedBy} on {d.date}</div>
+                <div style={{ fontSize: 12, color: C.textMuted }}>{t('Uploaded by {name} on {date}', { name: d.uploadedBy, date: d.date })}</div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={categoryColor(d.category)}>{d.category}</span>
+              <span style={categoryColor(d.category)}>{t(d.category)}</span>
               {/* There's no file behind a document yet — the backend has no upload
                   endpoint or storage column for this table (see documents.js). A
                   "Download" link with no handler looked clickable and did nothing,
                   so say what's actually true instead of faking the affordance;
                   mirrors ReferencesTab's "File coming soon" for the same gap. */}
-              <span style={{ fontSize: 12.5, color: C.textFaint, fontStyle: 'italic' }}>No file attached yet</span>
+              <span style={{ fontSize: 12.5, color: C.textFaint, fontStyle: 'italic' }}>{t('No file attached yet')}</span>
             </div>
           </div>
         ))}
-        {docs.length === 0 && (
-          <div style={{ textAlign: 'center', color: C.textMuted, padding: 24 }}>No documents uploaded yet.</div>
+        {docs?.length === 0 && (
+          <div style={{ textAlign: 'center', color: C.textMuted, padding: 24 }}>{t('No documents uploaded yet.')}</div>
         )}
       </div>
     </div>

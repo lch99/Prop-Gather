@@ -1,5 +1,7 @@
 import { Component, lazy } from 'react'
 import { C, card, button } from '../theme'
+import { translate } from '../i18n'
+import LoadingScreen from './Loading'
 
 const RELOADED_KEY = 'pg_chunk_reload'
 
@@ -57,24 +59,21 @@ export class PageErrorBoundary extends Component {
     if (!this.state.failed) return this.props.children
     return (
       <div style={{ maxWidth: 560, margin: '0 auto', padding: '40px 24px' }}>
+        {/* translate(), not useT(): a class component can't call hooks. */}
         <div role="alert" style={{ ...card, padding: 28, textAlign: 'center' }}>
-          <h2 style={{ margin: '0 0 8px', color: C.navy }}>We couldn't open this page</h2>
+          <h2 style={{ margin: '0 0 8px', color: C.navy }}>{translate("We couldn't open this page")}</h2>
           <p style={{ margin: '0 0 18px', color: C.textMuted, fontSize: 15, lineHeight: 1.6 }}>
-            Please check your internet connection, then try again.
+            {translate('Please check your internet connection, then try again.')}
           </p>
-          <button style={button('primary')} onClick={() => window.location.reload()}>Try again</button>
+          <button style={button('primary')} onClick={() => window.location.reload()}>{translate('Try again')}</button>
         </div>
       </div>
     )
   }
 }
 
-// Shown while a page's chunk downloads. The min-height keeps the footer from
-// jumping up into view and back down again.
+// Shown while a page's chunk downloads. The min-height (LoadingScreen's) keeps
+// the footer from jumping up into view and back down again.
 export function PageLoading() {
-  return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: 24, minHeight: '50vh', color: C.textMuted }}>
-      Loading…
-    </div>
-  )
+  return <LoadingScreen />
 }

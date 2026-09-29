@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../../api'
 import { C, card, button, badge } from '../../../theme'
+import { msg, useT } from '../../../i18n'
+import { LoadingInline } from '../../../components/Loading'
 import { useAttachments, AttachmentPicker, AttachmentList } from '../../../components/Attachments'
 import SensitiveContentNotice, { hasSensitiveContent } from '../../../components/SensitiveContentNotice'
+
+// Stored as English (the server keeps free text); shown translated.
+const DEFECT_CATEGORIES = [
+  msg('General'), msg('Lift'), msg('Electrical'), msg('Plumbing'), msg('Waterproofing'), msg('Facilities'), msg('Structural')
+]
 
 const statusStyle = (status) => {
   if (status === 'Open') return badge(C.danger, C.dangerBg)
@@ -12,7 +19,8 @@ const statusStyle = (status) => {
 }
 
 export default function DefectsPanel({ projectId, project }) {
-  const [defects, setDefects] = useState([])
+  const t = useT()
+  const [defects, setDefects] = useState(null) // null = still loading
   const [showNew, setShowNew] = useState(false)
   const [form, setForm] = useState({ title: '', block: '', floorRange: '', unit: '', category: 'General', description: '' })
   const [error, setError] = useState('')
@@ -48,30 +56,29 @@ export default function DefectsPanel({ projectId, project }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
         <div style={{ flex: '1 1 220px' }}>
-          <h3 style={{ margin: 0, color: C.navy }}>Defect Tracker</h3>
+          <h3 style={{ margin: 0, color: C.navy }}>{t('Defect Tracker')}</h3>
           <p style={{ margin: '4px 0 0', color: C.textMuted, fontSize: 13 }}>
-            Logged defects automatically surface how many other units reported the same issue —
-            turning complaints into documented evidence of systemic defects.
+            {t('Logged defects automatically surface how many other units reported the same issue — turning complaints into documented evidence of systemic defects.')}
           </p>
         </div>
-        <button style={button('primary')} onClick={() => setShowNew(s => !s)}>+ Log defect</button>
+        <button style={button('primary')} onClick={() => setShowNew(s => !s)}>+ {t('Log defect')}</button>
       </div>
 
       {showNew && (
         <div style={{ ...card, padding: 16, marginBottom: 16, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
-          <input placeholder="Defect title" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+          <input placeholder={t('Defect title')} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
             style={{ ...inputStyle, gridColumn: '1 / -1' }} />
-          <select value={form.block} onChange={e => setForm(f => ({ ...f, block: e.target.value }))} style={inputStyle}>
-            <option value="">Block...</option>
+          <select value={form.block} onChange={e => setForm(f => ({ ...f, block: e.target.value }))} style={inputStyle} aria-label={t('Block')}>
+            <option value="">{t('Block...')}</option>
             {(project.blocks || []).map(b => <option key={b} value={b}>{b}</option>)}
             {(!project.blocks || project.blocks.length === 0) && <option value="-">-</option>}
           </select>
-          <input placeholder="Floor / floor range" value={form.floorRange} onChange={e => setForm(f => ({ ...f, floorRange: e.target.value }))} style={inputStyle} />
-          <input placeholder="Your unit number" value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} style={inputStyle} />
-          <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={inputStyle}>
-            {['General', 'Lift', 'Electrical', 'Plumbing', 'Waterproofing', 'Facilities', 'Structural'].map(c => <option key={c} value={c}>{c}</option>)}
+          <input placeholder={t('Floor / floor range')} value={form.floorRange} onChange={e => setForm(f => ({ ...f, floorRange: e.target.value }))} style={inputStyle} />
+          <input placeholder={t('Your unit number')} value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} style={inputStyle} />
+          <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={inputStyle} aria-label={t('Category')}>
+            {DEFECT_CATEGORIES.map(c => <option key={c} value={c}>{t(c)}</option>)}
           </select>
-          <textarea placeholder="Describe the defect, include details others can match against..." rows={3} value={form.description}
+          <textarea placeholder={t('Describe the defect, include details others can match against...')} rows={3} value={form.description}
             onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ ...inputStyle, gridColumn: '1 / -1', resize: 'vertical' }} />
           <div style={{ gridColumn: '1 / -1' }}>
             <AttachmentPicker
@@ -79,7 +86,7 @@ export default function DefectsPanel({ projectId, project }) {
               addFiles={addFiles}
               removeAttachment={removeAttachment}
               error={uploadError}
-              label="Add photos of the defect"
+              label={t('Add photos of the defect')}
             />
           </div>
           <SensitiveContentNotice values={[form.title, form.description]} />
@@ -100,31 +107,36 @@ export default function DefectsPanel({ projectId, project }) {
               onClick={create}
               disabled={saving || hasSensitiveContent(form.title, form.description)}
             >
-              {saving ? (attachments.length ? 'Uploading…' : 'Submitting…') : 'Submit'}
+              {saving ? (attachments.length ? t('Uploading…') : t('Submitting…')) : t('Submit')}
             </button>
           </div>
         </div>
       )}
 
       <div style={{ display: 'grid', gap: 12 }}>
-        {defects.map(d => (
+        {defects === null && <LoadingInline />}
+        {defects?.map(d => (
           <div key={d.id} style={{ ...card, padding: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
               <h4 style={{ margin: 0, color: C.navy }}>{d.title}</h4>
-              <span style={statusStyle(d.status)}>{d.status}</span>
+              <span style={statusStyle(d.status)}>{t(d.status)}</span>
             </div>
             <p style={{ margin: '0 0 10px', fontSize: 14, color: C.text }}>{d.description}</p>
             <AttachmentList attachments={d.attachments} thumb={110} style={{ marginBottom: 10 }} />
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13, color: C.textMuted }}>
-              <span>📍 Block {d.block} · Floor {d.floorRange}</span>
-              <span>🏷 {d.category}</span>
-              <span>Reported by {d.reportedBy} ({d.unit}) on {d.reportedAt}</span>
-              {d.matchingUnits > 1 && <span style={{ color: C.danger, fontWeight: 600 }}>⚠ {d.matchingUnits} units reported same issue</span>}
+              <span>📍 {t('Block {block} · Floor {floor}', { block: d.block, floor: d.floorRange })}</span>
+              <span>🏷 {t(d.category)}</span>
+              <span>{t('Reported by {name} ({unit}) on {date}', { name: d.reportedBy, unit: d.unit, date: d.reportedAt })}</span>
+              {d.matchingUnits > 1 && (
+                <span style={{ color: C.danger, fontWeight: 600 }}>
+                  ⚠ {t('{n} units reported same issue', { n: d.matchingUnits })}
+                </span>
+              )}
             </div>
           </div>
         ))}
-        {defects.length === 0 && (
-          <div style={{ textAlign: 'center', color: C.textMuted, padding: 24 }}>No defects logged for this project.</div>
+        {defects?.length === 0 && (
+          <div style={{ textAlign: 'center', color: C.textMuted, padding: 24 }}>{t('No defects logged for this project.')}</div>
         )}
       </div>
     </div>

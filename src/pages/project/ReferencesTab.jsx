@@ -3,11 +3,14 @@ import { api } from '../../api'
 import { C, card, badge } from '../../theme'
 import { AttachmentList } from '../../components/Attachments'
 import { refMeta, PROGRESS_TYPE } from '../../referenceTypes'
+import { useT } from '../../i18n'
+import LoadingScreen from '../../components/Loading'
 
 const coverImage = (item) => (item.attachments || []).find(a => a.type?.startsWith('image/'))
 
 // Brochures / floor plans / site plans etc. — a tile with a cover and a download link.
 function ReferenceCard({ item }) {
+  const t = useT()
   const meta = refMeta(item.type)
   const cover = coverImage(item)
   return (
@@ -24,7 +27,7 @@ function ReferenceCard({ item }) {
           </div>
         )}
         <span style={{ ...badge(meta.color[0], meta.color[1]), position: 'absolute', top: 10, left: 10, boxShadow: C.shadow }}>
-          {meta.icon} {item.type}
+          {meta.icon} {t(item.type)}
         </span>
       </div>
       <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
@@ -32,11 +35,11 @@ function ReferenceCard({ item }) {
         {item.description && (
           <div style={{ fontSize: 14, color: C.textMuted, lineHeight: 1.45, flex: 1 }}>{item.description}</div>
         )}
-        <div style={{ fontSize: 12.5, color: C.textFaint }}>Updated {item.date}</div>
+        <div style={{ fontSize: 12.5, color: C.textFaint }}>{t('Updated {date}', { date: item.date })}</div>
         {item.attachments?.length > 0 ? (
           <AttachmentList attachments={item.attachments} thumb={66} style={{ marginTop: 2 }} />
         ) : (
-          <span style={{ fontSize: 13, color: C.textFaint, fontStyle: 'italic' }}>File coming soon</span>
+          <span style={{ fontSize: 13, color: C.textFaint, fontStyle: 'italic' }}>{t('File coming soon')}</span>
         )}
       </div>
     </div>
@@ -45,6 +48,7 @@ function ReferenceCard({ item }) {
 
 // Building-progress updates rendered as a dated timeline with a progress bar + photos.
 function ProgressTimeline({ items }) {
+  const t = useT()
   return (
     <div style={{ position: 'relative', paddingLeft: 30 }}>
       <div style={{ position: 'absolute', left: 9, top: 8, bottom: 8, width: 2, background: C.border }} />
@@ -63,7 +67,7 @@ function ProgressTimeline({ items }) {
                 <div style={{ background: C.neutralBg, borderRadius: 999, height: 14, overflow: 'hidden' }}>
                   <div style={{ width: `${item.progress}%`, height: '100%', background: 'linear-gradient(90deg,#B45309,#f59e0b)' }} />
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: C.accent, marginTop: 5 }}>{item.progress}% complete</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.accent, marginTop: 5 }}>{t('{n}% complete', { n: item.progress })}</div>
               </div>
             )}
 
@@ -79,6 +83,7 @@ function ProgressTimeline({ items }) {
 }
 
 export default function ReferencesTab({ projectId }) {
+  const t = useT()
   const [items, setItems] = useState(null)
 
   useEffect(() => {
@@ -86,27 +91,27 @@ export default function ReferencesTab({ projectId }) {
     api.getReferences(projectId).then(setItems).catch(() => setItems([]))
   }, [projectId])
 
-  if (items === null) return <div style={{ color: C.textMuted, padding: 8 }}>Loading references…</div>
+  if (items === null) return <LoadingScreen label={t('Loading references…')} minHeight={240} />
 
   const progress = items.filter(i => i.type === PROGRESS_TYPE)
   const docs = items.filter(i => i.type !== PROGRESS_TYPE)
 
   return (
     <div>
-      <h3 style={{ margin: '0 0 4px', color: C.navy, fontSize: 20 }}>References & Resources</h3>
+      <h3 style={{ margin: '0 0 4px', color: C.navy, fontSize: 20 }}>{t('References & Resources')}</h3>
       <p style={{ margin: '0 0 20px', color: C.textMuted, fontSize: 14.5, lineHeight: 1.5 }}>
-        Project & residence references and building-progress updates kept for this community.
+        {t('Project & residence references and building-progress updates kept for this community.')}
       </p>
 
       {items.length === 0 && (
         <div style={{ ...card, padding: 28, textAlign: 'center', color: C.textMuted, fontSize: 15 }}>
-          No references have been published yet. Check back soon.
+          {t('No references have been published yet. Check back soon.')}
         </div>
       )}
 
       {docs.length > 0 && (
         <section style={{ marginBottom: progress.length ? 32 : 0 }}>
-          <h4 style={{ margin: '0 0 14px', color: C.text, fontSize: 16 }}>📂 Project & Residence References</h4>
+          <h4 style={{ margin: '0 0 14px', color: C.text, fontSize: 16 }}>📂 {t('Project & Residence References')}</h4>
           <div style={{
             display: 'grid', gap: 18,
             gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))'
@@ -118,7 +123,7 @@ export default function ReferencesTab({ projectId }) {
 
       {progress.length > 0 && (
         <section>
-          <h4 style={{ margin: '0 0 16px', color: C.text, fontSize: 16 }}>🏗️ Building Progress</h4>
+          <h4 style={{ margin: '0 0 16px', color: C.text, fontSize: 16 }}>🏗️ {t('Building Progress')}</h4>
           <ProgressTimeline items={progress} />
         </section>
       )}

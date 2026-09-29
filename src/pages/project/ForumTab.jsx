@@ -6,22 +6,26 @@ import { AuthorLine } from '../../components/Badges'
 import { useAttachments, AttachmentPicker, AttachmentList } from '../../components/Attachments'
 import SensitiveContentNotice, { hasSensitiveContent } from '../../components/SensitiveContentNotice'
 import PollView from '../../components/PollView'
+import { msg, useI18n, useT } from '../../i18n'
+import LoadingScreen, { LoadingInline } from '../../components/Loading'
 
+// The values are what the server stores and filters on, so they stay English;
+// only their labels are translated.
 const categories = [
-  'Defects & Repairs', 'Building Management', 'Security', 'Maintenance Fees',
-  'Contractors & Services', 'Marketplace', 'Facilities', 'General Discussion'
+  msg('Defects & Repairs'), msg('Building Management'), msg('Security'), msg('Maintenance Fees'),
+  msg('Contractors & Services'), msg('Marketplace'), msg('Facilities'), msg('General Discussion')
 ]
 
 // A page at a time — the forum used to load every thread a community had ever
 // posted each time it was opened. More load when the resident asks for them.
 const PAGE_SIZE = 20
 
-function timeAgo(dateStr) {
+function timeAgo(dateStr, t) {
   const diff = Date.now() - new Date(dateStr).getTime()
   const hours = Math.floor(diff / 3600000)
-  if (hours < 1) return 'just now'
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.floor(hours / 24)}d ago`
+  if (hours < 1) return t('just now')
+  if (hours < 24) return t('{n}h ago', { n: hours })
+  return t('{n}d ago', { n: Math.floor(hours / 24) })
 }
 
 // A thread's replies, opened under it on demand. Loads the newest page, oldest
@@ -30,6 +34,7 @@ function timeAgo(dateStr) {
 const REPLY_PAGE_SIZE = 50
 
 function ThreadReplies({ projectId, threadId, isAdmin, onCountChange }) {
+  const t = useT()
   const [replies, setReplies] = useState(null) // null = still loading
   const [hasEarlier, setHasEarlier] = useState(false)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
@@ -87,14 +92,14 @@ function ThreadReplies({ projectId, threadId, isAdmin, onCountChange }) {
   }
 
   const remove = async (replyId) => {
-    if (!window.confirm('Delete this reply? This cannot be undone.')) return
+    if (!window.confirm(t('Delete this reply? This cannot be undone.'))) return
     try {
       await api.deleteThreadReply(projectId, threadId, replyId)
       setReplies(rs => rs.filter(r => r.id !== replyId))
       onCountChange(-1)
       setError('')
     } catch (err) {
-      setError(err.message || "We couldn't delete that reply just now. Please try again.")
+      setError(err.message || t("We couldn't delete that reply just now. Please try again."))
     }
   }
 
@@ -106,24 +111,24 @@ function ThreadReplies({ projectId, threadId, isAdmin, onCountChange }) {
     <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 12, paddingTop: 12, display: 'grid', gap: 10 }}>
       {hasEarlier && (
         <button onClick={loadEarlier} disabled={loadingEarlier} style={{ ...button('outline'), justifySelf: 'center', fontSize: 12, padding: '6px 12px' }}>
-          {loadingEarlier ? 'Loading…' : 'Show earlier replies'}
+          {loadingEarlier ? t('Loading…') : t('Show earlier replies')}
         </button>
       )}
-      {replies === null && <div style={{ fontSize: 13, color: C.textMuted }}>Loading replies…</div>}
+      {replies === null && <LoadingInline label={t('Loading replies…')} style={{ padding: 8, fontSize: 13 }} />}
       {replies?.length === 0 && !error && (
-        <div style={{ fontSize: 13, color: C.textMuted }}>No replies yet — be the first to respond.</div>
+        <div style={{ fontSize: 13, color: C.textMuted }}>{t('No replies yet — be the first to respond.')}</div>
       )}
       {replies?.map(r => (
         <div key={r.id} style={{ background: C.bg, borderRadius: C.radiusSm, padding: '10px 12px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
-            {r.author ? <AuthorLine author={r.author} /> : <span style={{ fontSize: 13, color: C.textMuted }}>Former resident</span>}
+            {r.author ? <AuthorLine author={r.author} /> : <span style={{ fontSize: 13, color: C.textMuted }}>{t('Former resident')}</span>}
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: C.textFaint }}>{timeAgo(r.createdAt)}</span>
+              <span style={{ fontSize: 12, color: C.textFaint }}>{timeAgo(r.createdAt, t)}</span>
               {(r.mine || isAdmin) && (
                 <button
                   onClick={() => remove(r.id)}
-                  title={r.mine ? 'Delete your reply' : 'Remove this reply (admin)'}
-                  aria-label={r.mine ? 'Delete your reply' : 'Remove this reply'}
+                  title={r.mine ? t('Delete your reply') : t('Remove this reply (admin)')}
+                  aria-label={r.mine ? t('Delete your reply') : t('Remove this reply')}
                   style={{ border: 'none', background: 'none', color: C.danger, fontSize: 13, cursor: 'pointer', padding: 0 }}
                 >
                   🗑️
@@ -138,8 +143,8 @@ function ThreadReplies({ projectId, threadId, isAdmin, onCountChange }) {
       <textarea
         value={draft}
         onChange={e => setDraft(e.target.value)}
-        placeholder="Write a reply…"
-        aria-label="Write a reply"
+        placeholder={t('Write a reply…')}
+        aria-label={t('Write a reply')}
         rows={2}
         maxLength={2000}
         style={{ padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 14, resize: 'vertical', width: '100%', boxSizing: 'border-box' }}
@@ -153,7 +158,7 @@ function ThreadReplies({ projectId, threadId, isAdmin, onCountChange }) {
           ...(cantSend ? { opacity: 0.5, cursor: 'not-allowed' } : sending ? { opacity: 0.7, cursor: 'wait' } : {})
         }}
       >
-        {sending ? 'Replying…' : 'Reply'}
+        {sending ? t('Replying…') : t('Reply')}
       </button>
     </div>
   )
@@ -161,6 +166,7 @@ function ThreadReplies({ projectId, threadId, isAdmin, onCountChange }) {
 
 export default function ForumTab({ projectId }) {
   const { user } = useAuth()
+  const { t, formatDate } = useI18n()
   const isAdmin = user?.role === 'admin'
   const [threads, setThreads] = useState([])
   const [hasMore, setHasMore] = useState(false)
@@ -243,20 +249,20 @@ export default function ForumTab({ projectId }) {
       const updated = thread.upvotedByMe
         ? await api.removeThreadUpvote(projectId, thread.id)
         : await api.upvoteThread(projectId, thread.id)
-      setThreads(ts => ts.map(t => t.id === updated.id ? updated : t))
+      setThreads(ts => ts.map(th => th.id === updated.id ? updated : th))
       setActionError('')
     } catch (err) {
-      setActionError(err.message || "We couldn't record that upvote just now. Please try again.")
+      setActionError(err.message || t("We couldn't record that upvote just now. Please try again."))
     }
   }
 
   const voteThreadPoll = async (threadId, optionId) => {
     try {
       const updated = await api.voteThreadPoll(projectId, threadId, optionId)
-      setThreads(ts => ts.map(t => t.id === updated.id ? updated : t))
+      setThreads(ts => ts.map(th => th.id === updated.id ? updated : th))
       setActionError('')
     } catch (err) {
-      setActionError(err.message || "We couldn't record that vote just now. Please try again.")
+      setActionError(err.message || t("We couldn't record that vote just now. Please try again."))
     }
   }
 
@@ -276,7 +282,7 @@ export default function ForumTab({ projectId }) {
 
   const saveEdit = async (threadId) => {
     if (!editDraft.title.trim() || !editDraft.body.trim()) {
-      setEditError('Your post needs a title and some text.')
+      setEditError(t('Your post needs a title and some text.'))
       return
     }
     if (editBlocked) return
@@ -284,7 +290,7 @@ export default function ForumTab({ projectId }) {
       const updated = await api.editThread(projectId, threadId, editDraft)
       // Replaced in place rather than re-reading the list, which would drop every
       // page loaded past the first.
-      setThreads(ts => ts.map(t => t.id === updated.id ? updated : t))
+      setThreads(ts => ts.map(th => th.id === updated.id ? updated : th))
       setEditingId(null)
       setEditError('')
     } catch (err) {
@@ -295,13 +301,13 @@ export default function ForumTab({ projectId }) {
   // You can remove your own post — this is the PDPA right to have content
   // you contributed deleted, not just your verification document.
   const deleteThread = async (threadId) => {
-    if (!window.confirm('Delete this post? This cannot be undone.')) return
+    if (!window.confirm(t('Delete this post? This cannot be undone.'))) return
     try {
       await api.deleteThread(projectId, threadId)
-      setThreads(ts => ts.filter(t => t.id !== threadId))
+      setThreads(ts => ts.filter(th => th.id !== threadId))
       setActionError('')
     } catch (err) {
-      setActionError(err.message || "We couldn't delete that post just now. Please try again.")
+      setActionError(err.message || t("We couldn't delete that post just now. Please try again."))
     }
   }
 
@@ -313,7 +319,7 @@ export default function ForumTab({ projectId }) {
   })
 
   const changeReplyCount = (threadId, delta) =>
-    setThreads(ts => ts.map(t => t.id === threadId ? { ...t, replies: Math.max(0, t.replies + delta) } : t))
+    setThreads(ts => ts.map(th => th.id === threadId ? { ...th, replies: Math.max(0, th.replies + delta) } : th))
 
   // --- poll builder helpers (form) ---
   const addPoll = () => setPoll({ question: '', options: ['', ''] })
@@ -331,7 +337,7 @@ export default function ForumTab({ projectId }) {
       const options = poll.options.map(o => o.trim()).filter(Boolean)
       // Said rather than quietly posting without the poll the resident built.
       if (!poll.question.trim() || options.length < 2) {
-        setPostError('Your poll needs a question and at least 2 options. Fill them in, or tap "Remove poll" to post without one.')
+        setPostError(t('Your poll needs a question and at least 2 options. Fill them in, or tap "Remove poll" to post without one.'))
         return
       }
       pollPayload = { question: poll.question.trim(), options }
@@ -359,7 +365,7 @@ export default function ForumTab({ projectId }) {
     <div className="pg-forum-grid" style={{ display: 'grid', gap: 20 }}>
       <div>
         <div className="pg-forum-cats" style={{ ...card, padding: 12 }}>
-          <div style={{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>CATEGORIES</div>
+          <div style={{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>{t('CATEGORIES')}</div>
           {['All', ...categories].map(c => (
             <button
               key={c}
@@ -372,7 +378,7 @@ export default function ForumTab({ projectId }) {
                 marginBottom: 2
               }}
             >
-              {c}
+              {t(c)}
             </button>
           ))}
         </div>
@@ -382,28 +388,29 @@ export default function ForumTab({ projectId }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
           <div style={{ color: C.textMuted, fontSize: 14 }}>
             {loading
-              ? 'Loading posts…'
-              : `${threads.length}${hasMore ? '+' : ''} thread${threads.length === 1 && !hasMore ? '' : 's'}`}
+              ? t('Loading posts…')
+              : t(threads.length === 1 && !hasMore ? '{n} thread' : '{n} threads', { n: `${threads.length}${hasMore ? '+' : ''}` })}
           </div>
-          <button style={button('primary')} onClick={() => setShowNew(s => !s)}>+ New thread</button>
+          <button style={button('primary')} onClick={() => setShowNew(s => !s)}>+ {t('New thread')}</button>
         </div>
 
         {showNew && (
           <div style={{ ...card, padding: 16, marginBottom: 16, display: 'grid', gap: 10 }}>
-            <select value={newThread.category} onChange={e => setNewThread(t => ({ ...t, category: e.target.value }))}
+            <select value={newThread.category} onChange={e => setNewThread(nt => ({ ...nt, category: e.target.value }))}
+              aria-label={t('Category')}
               style={{ padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 14 }}>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              {categories.map(c => <option key={c} value={c}>{t(c)}</option>)}
             </select>
             <input
-              placeholder="Thread title"
+              placeholder={t('Thread title')}
               value={newThread.title}
-              onChange={e => setNewThread(t => ({ ...t, title: e.target.value }))}
+              onChange={e => setNewThread(nt => ({ ...nt, title: e.target.value }))}
               style={{ padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 14 }}
             />
             <textarea
-              placeholder="Write your post..."
+              placeholder={t('Write your post...')}
               value={newThread.body}
-              onChange={e => setNewThread(t => ({ ...t, body: e.target.value }))}
+              onChange={e => setNewThread(nt => ({ ...nt, body: e.target.value }))}
               rows={3}
               style={{ padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 14, resize: 'vertical' }}
             />
@@ -428,7 +435,7 @@ export default function ForumTab({ projectId }) {
                     background: C.blueLight, color: C.blue, fontSize: 14, fontWeight: 600
                   }}
                 >
-                  📊 Add a poll
+                  📊 {t('Add a poll')}
                 </button>
               )}
               <button
@@ -439,10 +446,12 @@ export default function ForumTab({ projectId }) {
                 onClick={submit}
                 disabled={blockedByPii || posting}
               >
-                {posting ? (attachments.length ? 'Uploading…' : 'Posting…') : 'Post'}
+                {posting ? (attachments.length ? t('Uploading…') : t('Posting…')) : t('Post')}
               </button>
             </div>
-            <div style={{ fontSize: 12, color: C.textFaint, marginTop: -4 }}>Up to 6 files · 5 MB per file · 10 MB total</div>
+            <div style={{ fontSize: 12, color: C.textFaint, marginTop: -4 }}>
+              {t('Up to {max} files · {perFile} MB per file · {total} MB total', { max: 6, perFile: 5, total: 10 })}
+            </div>
 
             {postError && (
               <div role="alert" style={{ fontSize: 13, color: C.danger, background: C.dangerBg, padding: '8px 10px', borderRadius: C.radiusSm }}>
@@ -453,13 +462,13 @@ export default function ForumTab({ projectId }) {
             {poll && (
               <div style={{ border: `1px solid ${C.border}`, borderRadius: C.radiusSm, padding: 12, display: 'grid', gap: 8, background: C.bg }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 700, color: C.navy, fontSize: 13 }}>POLL</span>
+                  <span style={{ fontWeight: 700, color: C.navy, fontSize: 13 }}>{t('POLL')}</span>
                   <button type="button" onClick={removePoll} style={{ border: 'none', background: 'none', color: C.danger, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                    Remove poll
+                    {t('Remove poll')}
                   </button>
                 </div>
                 <input
-                  placeholder="Poll question (e.g. Should we repaint the lobby?)"
+                  placeholder={t('Poll question (e.g. Should we repaint the lobby?)')}
                   value={poll.question}
                   onChange={e => setPollQuestion(e.target.value)}
                   style={{ padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 14 }}
@@ -467,7 +476,7 @@ export default function ForumTab({ projectId }) {
                 {poll.options.map((o, i) => (
                   <div key={i} style={{ display: 'flex', gap: 8 }}>
                     <input
-                      placeholder={`Option ${i + 1}`}
+                      placeholder={t('Option {n}', { n: i + 1 })}
                       value={o}
                       onChange={e => setPollOption(i, e.target.value)}
                       style={{ flex: 1, padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 14 }}
@@ -476,7 +485,7 @@ export default function ForumTab({ projectId }) {
                       <button
                         type="button"
                         onClick={() => removePollOption(i)}
-                        aria-label={`Remove option ${i + 1}`}
+                        aria-label={t('Remove option {n}', { n: i + 1 })}
                         style={{ border: `1px solid ${C.border}`, background: '#fff', color: C.danger, borderRadius: C.radiusSm, padding: '0 12px', fontSize: 16, cursor: 'pointer' }}
                       >
                         ×
@@ -486,7 +495,7 @@ export default function ForumTab({ projectId }) {
                 ))}
                 <div>
                   <button type="button" onClick={addPollOption} style={{ ...button('outline'), fontSize: 13, padding: '7px 14px' }}>
-                    + Add option
+                    + {t('Add option')}
                   </button>
                 </div>
               </div>
@@ -507,16 +516,22 @@ export default function ForumTab({ projectId }) {
         )}
 
         <div style={{ display: 'grid', gap: 12, opacity: loading && threads.length > 0 ? 0.5 : 1 }}>
-          {threads.map(t => (
-            <div key={t.id} style={{ ...card, padding: 16 }}>
+          {/* First load of a category: nothing to dim yet, so show the loader. */}
+          {loading && threads.length === 0 && (
+            <div style={{ ...card }}>
+              <LoadingScreen label={t('Loading posts…')} minHeight={220} />
+            </div>
+          )}
+          {threads.map(th => (
+            <div key={th.id} style={{ ...card, padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {t.pinned && <span style={badge(C.accent, C.accentLight)}>📌 Pinned</span>}
-                  <span style={badge(C.blue, C.blueLight)}>{t.category}</span>
+                  {th.pinned && <span style={badge(C.accent, C.accentLight)}>📌 {t('Pinned')}</span>}
+                  <span style={badge(C.blue, C.blueLight)}>{t(th.category)}</span>
                 </div>
-                <span style={{ fontSize: 12, color: C.textFaint }}>{timeAgo(t.createdAt)}</span>
+                <span style={{ fontSize: 12, color: C.textFaint }}>{timeAgo(th.createdAt, t)}</span>
               </div>
-              {editingId === t.id ? (
+              {editingId === th.id ? (
                 <div style={{ display: 'grid', gap: 8, marginBottom: 10 }}>
                   <input
                     value={editDraft.title}
@@ -531,74 +546,74 @@ export default function ForumTab({ projectId }) {
                   />
                   <SensitiveContentNotice values={[editDraft.title, editDraft.body]} />
                   <div style={{ fontSize: 12, color: C.textFaint }}>
-                    You can edit a post once — after saving, this can’t be changed again.
+                    {t('You can edit a post once — after saving, this can’t be changed again.')}
                   </div>
                   {editError && <div style={{ fontSize: 13, color: C.danger }}>{editError}</div>}
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
                       style={{ ...button('primary'), ...(editBlocked ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
-                      onClick={() => saveEdit(t.id)}
+                      onClick={() => saveEdit(th.id)}
                       disabled={editBlocked}
                     >
-                      Save edit
+                      {t('Save edit')}
                     </button>
-                    <button style={button('outline')} onClick={cancelEdit}>Cancel</button>
+                    <button style={button('outline')} onClick={cancelEdit}>{t('Cancel')}</button>
                   </div>
                 </div>
               ) : (
                 <>
-                  <h3 style={{ margin: '0 0 6px', color: C.navy }}>{t.title}</h3>
+                  <h3 style={{ margin: '0 0 6px', color: C.navy }}>{th.title}</h3>
                   <p style={{ margin: '0 0 10px', color: C.text, fontSize: 14 }}>
-                    {t.body}
-                    {t.editedAt && (
-                      <span style={{ color: C.textFaint, fontSize: 12, marginLeft: 6 }} title={`Edited ${new Date(t.editedAt).toLocaleString('en-MY')}`}>
-                        (edited)
+                    {th.body}
+                    {th.editedAt && (
+                      <span style={{ color: C.textFaint, fontSize: 12, marginLeft: 6 }} title={t('Edited {date}', { date: formatDate(th.editedAt) })}>
+                        {t('(edited)')}
                       </span>
                     )}
                   </p>
                 </>
               )}
-              <AttachmentList attachments={t.attachments} style={{ marginBottom: 10 }} />
-              {t.poll && (
+              <AttachmentList attachments={th.attachments} style={{ marginBottom: 10 }} />
+              {th.poll && (
                 <div style={{ border: `1px solid ${C.border}`, borderRadius: C.radiusSm, padding: 14, marginBottom: 10, background: C.bg }}>
-                  <PollView poll={t.poll} onVote={(optionId) => voteThreadPoll(t.id, optionId)} compact />
+                  <PollView poll={th.poll} onVote={(optionId) => voteThreadPoll(th.id, optionId)} compact />
                 </div>
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                {t.author ? <AuthorLine author={t.author} /> : <span style={{ fontSize: 13, color: C.textMuted }}>Former resident</span>}
+                {th.author ? <AuthorLine author={th.author} /> : <span style={{ fontSize: 13, color: C.textMuted }}>{t('Former resident')}</span>}
                 <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, color: C.textMuted }}>
                   <button
-                    onClick={() => toggleUpvote(t)}
-                    aria-pressed={!!t.upvotedByMe}
-                    title={t.upvotedByMe ? 'Remove your upvote' : 'Upvote this post'}
-                    style={{ border: 'none', background: 'none', color: t.upvotedByMe ? C.blue : C.textMuted, fontWeight: t.upvotedByMe ? 700 : 400, fontSize: 13, cursor: 'pointer' }}
+                    onClick={() => toggleUpvote(th)}
+                    aria-pressed={!!th.upvotedByMe}
+                    title={th.upvotedByMe ? t('Remove your upvote') : t('Upvote this post')}
+                    style={{ border: 'none', background: 'none', color: th.upvotedByMe ? C.blue : C.textMuted, fontWeight: th.upvotedByMe ? 700 : 400, fontSize: 13, cursor: 'pointer' }}
                   >
-                    ▲ {t.upvotes}
+                    ▲ {th.upvotes}
                   </button>
                   <button
-                    onClick={() => toggleReplies(t.id)}
-                    aria-expanded={openReplies.has(t.id)}
-                    style={{ border: 'none', background: 'none', color: openReplies.has(t.id) ? C.blue : C.textMuted, fontSize: 13, cursor: 'pointer' }}
+                    onClick={() => toggleReplies(th.id)}
+                    aria-expanded={openReplies.has(th.id)}
+                    style={{ border: 'none', background: 'none', color: openReplies.has(th.id) ? C.blue : C.textMuted, fontSize: 13, cursor: 'pointer' }}
                   >
-                    💬 {t.replies} {t.replies === 1 ? 'reply' : 'replies'}
+                    💬 {t(th.replies === 1 ? '{n} reply' : '{n} replies', { n: th.replies })}
                   </button>
                   {/* One edit per post, your own — once spent, only delete remains. */}
-                  {t.mine && !t.editedAt && editingId !== t.id && (
+                  {th.mine && !th.editedAt && editingId !== th.id && (
                     <button
-                      onClick={() => startEdit(t)}
-                      title="Edit your post (once only)"
-                      aria-label="Edit your post"
+                      onClick={() => startEdit(th)}
+                      title={t('Edit your post (once only)')}
+                      aria-label={t('Edit your post')}
                       style={{ border: 'none', background: 'none', color: C.blue, fontSize: 13, cursor: 'pointer', padding: 0 }}
                     >
                       ✏️
                     </button>
                   )}
                   {/* Your own post, or any post for an admin moderating. */}
-                  {(t.mine || isAdmin) && editingId !== t.id && (
+                  {(th.mine || isAdmin) && editingId !== th.id && (
                     <button
-                      onClick={() => deleteThread(t.id)}
-                      title={t.mine ? 'Delete your post' : 'Remove this post (admin)'}
-                      aria-label={t.mine ? 'Delete your post' : 'Remove this post'}
+                      onClick={() => deleteThread(th.id)}
+                      title={th.mine ? t('Delete your post') : t('Remove this post (admin)')}
+                      aria-label={th.mine ? t('Delete your post') : t('Remove this post')}
                       style={{ border: 'none', background: 'none', color: C.danger, fontSize: 13, cursor: 'pointer', padding: 0 }}
                     >
                       🗑️
@@ -606,18 +621,18 @@ export default function ForumTab({ projectId }) {
                   )}
                 </div>
               </div>
-              {openReplies.has(t.id) && (
+              {openReplies.has(th.id) && (
                 <ThreadReplies
                   projectId={projectId}
-                  threadId={t.id}
+                  threadId={th.id}
                   isAdmin={isAdmin}
-                  onCountChange={(delta) => changeReplyCount(t.id, delta)}
+                  onCountChange={(delta) => changeReplyCount(th.id, delta)}
                 />
               )}
             </div>
           ))}
           {!loading && !loadError && threads.length === 0 && (
-            <div style={{ ...card, padding: 24, textAlign: 'center', color: C.textMuted }}>No threads in this category yet.</div>
+            <div style={{ ...card, padding: 24, textAlign: 'center', color: C.textMuted }}>{t('No threads in this category yet.')}</div>
           )}
           {hasMore && (
             <button
@@ -625,7 +640,7 @@ export default function ForumTab({ projectId }) {
               onClick={loadMore}
               disabled={loadingMore}
             >
-              {loadingMore ? 'Loading…' : 'Load more threads'}
+              {loadingMore ? t('Loading…') : t('Load more threads')}
             </button>
           )}
         </div>

@@ -36,9 +36,14 @@ review this and the linked code before you rely on it.
       rights (access/correction/portability/withdrawal/complaint) —
       `src/pages/PrivacyPage.jsx`
 - [x] **Bilingual Privacy Notice (EN + Bahasa Malaysia)**, as PDPA's Notice
-      and Choice Principle requires — `src/pages/PrivacyPage.jsx` (language
-      toggle). The BM text is a good-faith translation, explicitly flagged
-      in-page as not yet reviewed by a native/legal speaker.
+      and Choice Principle requires — `src/pages/PrivacyPage.jsx` (follows the
+      site language; the in-page EN / BM / 中文 buttons switch it). The BM text
+      is a good-faith translation, explicitly flagged in-page as not yet
+      reviewed by a native/legal speaker. A Chinese version is offered as a
+      courtesy only, flagged in-page as not legally reviewed and subordinate to
+      the English and BM texts. The rest of the resident-facing site — including
+      the registration consent wording — is also in all three languages
+      (`src/locales/`), with the same not-yet-reviewed caveat.
 - [x] Failed-login audit logging (`auth.login_failed`) and successful-admin-login
       logging (`auth.admin_login`), plus per-account login rate-limiting
       (10 attempts / 15 min) — `backend/src/routes/auth.js`,
@@ -112,7 +117,8 @@ only you (or your lawyer) can take:
 - [ ] **Operationalize the breach response runbook** — assign a real named
       owner (presumably your DPO once appointed), actually test it, and fill
       in the `[ FILL IN ]` placeholders in `backend/docs/BREACH_RESPONSE.md`.
-- [ ] **Legal review of the Privacy Policy and its BM translation** —
+- [ ] **Legal review of the Privacy Policy and its BM translation** (and the
+      BM/Chinese consent text in registration step 2, `src/locales/`) —
       `src/pages/PrivacyPage.jsx` now covers the Section 7 Notice and Choice
       checklist items I could find (purpose, mandatory-vs-voluntary, source
       of data, third-party classes, children's data, rights) in both

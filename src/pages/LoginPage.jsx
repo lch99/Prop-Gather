@@ -3,11 +3,13 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { C, card, button } from '../theme'
 import Seo from '../seo'
 import { useAuth, DEMO_ACCOUNTS, SHOW_DEMO_LOGINS, homePathFor, safeNextPath } from '../auth'
+import { useT } from '../i18n'
 
 export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { user, login } = useAuth()
+  const t = useT()
   const [form, setForm] = useState({ email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(true)
@@ -33,11 +35,11 @@ export default function LoginPage() {
   const submit = async (e) => {
     e.preventDefault()
     if (!form.email || !form.password) {
-      setError('Please enter both your email and password.')
+      setError(t('Please enter both your email and password.'))
       return
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-      setError("That email doesn't look quite right — please check it.")
+      setError(t("That email doesn't look quite right — please check it."))
       return
     }
     setError('')
@@ -46,7 +48,7 @@ export default function LoginPage() {
       const profile = await login({ email: form.email, password: form.password, remember })
       navigate(next || homePathFor(profile), { replace: true })
     } catch (err) {
-      setError(err.message || 'Something went wrong signing you in. Please try again.')
+      setError(err.message || t('Something went wrong signing you in. Please try again.'))
       setBusy(false)
     }
   }
@@ -67,27 +69,31 @@ export default function LoginPage() {
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '40px 24px 48px' }}>
-      <Seo path="/login" title="Log in" noindex />
+      <Seo path="/login" title={t('Log in')} noindex />
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
         <div style={{ fontSize: 44, lineHeight: 1, marginBottom: 8 }} aria-hidden="true">🏡</div>
         <h1 style={{ color: C.navy, margin: '0 0 6px', fontSize: 30, letterSpacing: '-0.01em' }}>
-          Welcome back 👋
+          {t('Welcome back')} 👋
         </h1>
         <p style={{ color: C.textMuted, margin: 0, fontSize: 16, lineHeight: 1.6 }}>
-          Sign in to catch up with your verified property community.
+          {t('Sign in to catch up with your verified property community.')}
         </p>
       </div>
 
       <form onSubmit={submit} style={{ ...card, padding: 28, display: 'grid', gap: 18 }}>
         {user && switching && (
           <div style={{ background: C.blueLight, borderRadius: C.radiusSm, padding: '11px 14px', fontSize: 14.5, color: C.text, lineHeight: 1.55 }}>
-            You're signed in as <strong>{user.name}</strong>. Signing in below switches to another account, or{' '}
-            <Link to={next || homePathFor(user)} style={{ color: C.blue, fontWeight: 700 }}>
-              carry on as {user.name}
-            </Link>.
+            {t("You're signed in as {name}. Signing in below switches to another account, or {link}.", {
+              name: <strong>{user.name}</strong>,
+              link: (
+                <Link to={next || homePathFor(user)} style={{ color: C.blue, fontWeight: 700 }}>
+                  {t('carry on as {name}', { name: user.name })}
+                </Link>
+              )
+            })}
           </div>
         )}
-        <Field label="Email address">
+        <Field label={t('Email address')}>
           <input
             type="email"
             value={form.email}
@@ -104,9 +110,9 @@ export default function LoginPage() {
         <Field
           label={
             <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
-              <span>Password</span>
+              <span>{t('Password')}</span>
               <Link to="/contact" style={{ color: C.blue, fontSize: 13.5, fontWeight: 700 }}>
-                Forgot password?
+                {t('Forgot password?')}
               </Link>
             </span>
           }
@@ -119,7 +125,7 @@ export default function LoginPage() {
               onFocus={() => setFocused('password')}
               onBlur={() => setFocused('')}
               style={{ ...inputWith('password'), paddingRight: 72 }}
-              placeholder="Your password"
+              placeholder={t('Your password')}
               autoComplete="current-password"
             />
             <button
@@ -130,9 +136,9 @@ export default function LoginPage() {
                 background: 'transparent', border: 'none', color: C.blue,
                 fontSize: 14, fontWeight: 700, cursor: 'pointer', padding: '6px 8px'
               }}
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-label={showPassword ? t('Hide password') : t('Show password')}
             >
-              {showPassword ? 'Hide' : 'Show'}
+              {showPassword ? t('Hide') : t('Show')}
             </button>
           </div>
         </Field>
@@ -144,7 +150,7 @@ export default function LoginPage() {
             onChange={e => setRemember(e.target.checked)}
             style={{ width: 18, height: 18, cursor: 'pointer', accentColor: C.blue }}
           />
-          Keep me signed in on this device
+          {t('Keep me signed in on this device')}
         </label>
 
         {error && (
@@ -161,13 +167,13 @@ export default function LoginPage() {
           disabled={busy}
           style={{ ...button('primary'), fontSize: 16, padding: '13px 18px', opacity: busy ? 0.7 : 1, cursor: busy ? 'wait' : 'pointer' }}
         >
-          {busy ? 'Signing you in…' : 'Log in'}
+          {busy ? t('Signing you in…') : t('Log in')}
         </button>
 
         <p style={{ margin: 0, textAlign: 'center', fontSize: 14.5, color: C.textMuted }}>
-          New to PropGather?{' '}
+          {t('New to PropGather?')}{' '}
           <Link to="/register" style={{ color: C.blue, fontWeight: 700 }}>
-            Join &amp; verify your community
+            {t('Join & verify your community')}
           </Link>
         </p>
       </form>

@@ -11,6 +11,8 @@
 // Services" categories — blocking it would break the product to prevent
 // something residents are choosing to disclose about themselves.
 
+import { msg } from './i18n.jsx'
+
 // Malaysian NRIC birthplace codes that are actually issued: 01–59 and 60–85.
 // 00, 17–20 and 86–99 are unused, so checking this rejects a large share of
 // coincidental 12-digit numbers.
@@ -66,9 +68,10 @@ function hasPaymentCard(text) {
   return false
 }
 
+// `kind` is English; SensitiveContentNotice translates it for display.
 const DETECTORS = [
-  { kind: 'NRIC / IC number', test: hasNric },
-  { kind: 'payment card number', test: hasPaymentCard }
+  { kind: msg('NRIC / IC number'), test: hasNric },
+  { kind: msg('payment card number'), test: hasPaymentCard }
 ]
 
 // Returns the kinds of sensitive identifiers found across the given values.
