@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build && node scripts/postbuild.mjs",
     "preview": "vite preview",
+    "check:i18n": "node scripts/check-i18n.mjs",
     "predeploy": "vite build --base=/Prop-Gather/ && node scripts/postbuild.mjs",
     "deploy": "gh-pages -d dist"
   },

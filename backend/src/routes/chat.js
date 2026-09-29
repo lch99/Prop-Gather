@@ -43,9 +43,14 @@ const MESSAGE_SELECT = `
     ON cm.user_id = m.sender_user_id AND cm.project_id = m.project_id
 `
 
-async function serializeMessage(row) {
+// `createdAt` rather than a formatted time: the server's timezone is whatever
+// the host runs (usually UTC), so formatting here put every message eight hours
+// off for Malaysia. The page formats it in the resident's own. `mine` decides
+// where edit/delete appear — it used to be a display-name comparison.
+async function serializeMessage(row, viewer) {
   return {
     id: row.id,
+    mine: row.sender_user_id === viewer.id,
     sender: row.sender_name || 'Unknown',
     unit: row.sender_unit || '-',
     tier: row.sender_tier || 'Owner',
@@ -53,7 +58,7 @@ async function serializeMessage(row) {
     text: row.text,
     attachments: await withAttachmentUrls(parseAttachments(row.attachments)),
     editedAt: row.edited_at || null,
-    time: new Date(row.created_at).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: false })
+    createdAt: row.created_at
   }
 }
 
@@ -89,7 +94,7 @@ chatRouter.get('/:channel/messages', requireAuth, requireMembership, requireVali
     [...params, limit]
   )
   rows.reverse()
-  res.json(await Promise.all(rows.map(serializeMessage)))
+  res.json(await Promise.all(rows.map(r => serializeMessage(r, req.user))))
 }))
 
 chatRouter.post('/:channel/messages', requireAuth, requireMembership, requireValidChannel, validate(sendSchema), blockSensitiveContent('text'), wrap(async (req, res, next) => {
@@ -106,7 +111,7 @@ chatRouter.post('/:channel/messages', requireAuth, requireMembership, requireVal
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `, [msgId, req.params.projectId, req.params.channel, req.user.id, text, JSON.stringify(attachments), createdAt])
 
-  res.status(201).json(await serializeMessage(await fetchMessage(db, msgId)))
+  res.status(201).json(await serializeMessage(await fetchMessage(db, msgId), req.user))
 }))
 
 const editSchema = z.object({
@@ -126,7 +131,9 @@ chatRouter.patch('/:channel/messages/:messageId', requireAuth, requireMembership
   if (msg.sender_user_id !== req.user.id) return next(forbidden('Only the person who sent this message can edit it.'))
   if (msg.edited_at) return next(conflict('This message has already been edited. Messages can only be edited once.'))
 
-  await db.run('UPDATE chat_messages SET text = ?, edited_at = ? WHERE id = ?', [req.body.text, new Date().toISOString(), msg.id])
+  // Guarded so two racing saves can't both spend the one edit (see forum.js).
+  const { changes } = await db.run('UPDATE chat_messages SET text = ?, edited_at = ? WHERE id = ? AND edited_at IS NULL', [req.body.text, new Date().toISOString(), msg.id])
+  if (!changes) return next(conflict('This message has already been edited. Messages can only be edited once.'))
 
   await recordAudit(db, {
     actorUserId: req.user.id,
@@ -138,7 +145,7 @@ chatRouter.patch('/:channel/messages/:messageId', requireAuth, requireMembership
     metadata: { channel: req.params.channel }
   })
 
-  res.json(await serializeMessage(await fetchMessage(db, msg.id)))
+  res.json(await serializeMessage(await fetchMessage(db, msg.id), req.user))
 }))
 
 // Lets a resident remove their own message (or an admin remove any message) —

@@ -3,62 +3,52 @@ import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { C, card, chipColor } from '../theme'
 import Seo from '../seo'
+import { msg, useT } from '../i18n'
 
 // Resident-facing features. Each entry borrows a cheerful chip hue for its icon tile,
 // while card text stays dark on white for older-eye legibility (WCAG AA).
 const FEATURES = [
-  { icon: '💬', title: 'Community forum', text: 'Raise issues, ask questions, and get answers from neighbours who actually live in your building.' },
-  { icon: '⚡', title: 'Live chat', text: 'Real-time channels for your block — coordinate quickly when something needs attention now.' },
-  { icon: '🗳️', title: 'Polls & voting', text: 'Run quick community polls so every owner gets a fair, recorded say on the things that matter.' },
-  { icon: '🛠️', title: 'Defects tracking', text: 'Log and follow building defects from report to fix — nothing slips through the cracks.' },
-  { icon: '📄', title: 'Documents & fees', text: 'Keep statements, notices, and shared documents in one trusted place, always to hand.' },
-  { icon: '🤝', title: 'Trusted vendors', text: 'See vendors and offers vetted for your community, plus petitions to rally support together.' }
+  { icon: '💬', title: msg('Community forum'), text: msg('Raise issues, ask questions, and get answers from neighbours who actually live in your building.') },
+  { icon: '⚡', title: msg('Live chat'), text: msg('Real-time channels for your block — coordinate quickly when something needs attention now.') },
+  { icon: '🗳️', title: msg('Polls & voting'), text: msg('Run quick community polls so every owner gets a fair, recorded say on the things that matter.') },
+  { icon: '🛠️', title: msg('Defects tracking'), text: msg('Log and follow building defects from report to fix — nothing slips through the cracks.') },
+  { icon: '📄', title: msg('Documents & fees'), text: msg('Keep statements, notices, and shared documents in one trusted place, always to hand.') },
+  { icon: '🤝', title: msg('Trusted vendors'), text: msg('See vendors and offers vetted for your community, plus petitions to rally support together.') }
 ]
 
 const STEPS = [
-  { n: '1', title: 'Find your community', text: "Browse Malaysia's national directory and search for your property by name, city, or state." },
-  { n: '2', title: 'Verify your ownership', text: "Upload your Sale and Purchase Agreement (SPA), a recent utility bill, or a copy of the property title. We confirm you're a genuine owner — that's what keeps it safe." },
-  { n: '3', title: 'Join & unlock the tools', text: "Once verified, step inside your community's forum, chat, and owner tools." }
+  { n: '1', title: msg('Find your community'), text: msg("Browse Malaysia's national directory and search for your property by name, city, or state.") },
+  { n: '2', title: msg('Verify your ownership'), text: msg("Upload your Sale and Purchase Agreement (SPA), a recent utility bill, or a copy of the property title. We confirm you're a genuine owner — that's what keeps it safe.") },
+  { n: '3', title: msg('Join & unlock the tools'), text: msg("Once verified, step inside your community's forum, chat, and owner tools.") }
 ]
 
 // [feature, in PropGather, in a normal group chat]. Held to the five points a
 // group chat genuinely cannot do — a longer list only restates the same argument.
 const COMPARE = [
-  ['Everyone is a verified resident', true, false],
-  ['Organised threads you can actually find', true, false],
-  ['Transparent polls & voting records', true, false],
-  ['A residents-only space, free of management', true, false],
-  ['Track defects from report to fix', true, false]
+  [msg('Everyone is a verified resident'), true, false],
+  [msg('Organised threads you can actually find'), true, false],
+  [msg('Transparent polls & voting records'), true, false],
+  [msg('A residents-only space, free of management'), true, false],
+  [msg('Track defects from report to fix'), true, false]
 ]
 
 const TESTIMONIALS = [
-  { quote: 'Running a quick poll instead of a 200-message argument changed everything. Decisions are clear and the whole block can see the result.', name: 'Tan Wei Ming', role: 'Owner · Mont Kiara' },
-  { quote: 'My mother is 68 and she can use it on her own. Big text, clear buttons — she reads every notice now instead of asking me.', name: 'Nurul Aina', role: 'Owner · Setapak' },
-  { quote: "A defect I reported actually got tracked and fixed. No more \"I'll tell the management\" and never hearing back.", name: 'Rajesh Kumar', role: 'Owner · Bangsar South' }
+  { quote: msg('Running a quick poll instead of a 200-message argument changed everything. Decisions are clear and the whole block can see the result.'), name: 'Tan Wei Ming', place: 'Mont Kiara' },
+  { quote: msg('My mother is 68 and she can use it on her own. Big text, clear buttons — she reads every notice now instead of asking me.'), name: 'Nurul Aina', place: 'Setapak' },
+  { quote: msg("A defect I reported actually got tracked and fixed. No more \"I'll tell the management\" and never hearing back."), name: 'Rajesh Kumar', place: 'Bangsar South' }
 ]
 
 const FAQS = [
-  { q: 'Is PropGather free to use?', a: 'Yes. Browsing the directory and joining your verified community is completely free for residents and owners.' },
-  { q: 'How do you verify that someone is a real owner?', a: 'During registration you upload your Sale and Purchase Agreement (SPA), a recent utility bill, or a copy of the property title. A platform admin reviews it — usually within 24 hours — before granting access.' },
-  { q: 'Is my document and data safe?', a: 'Your proof document is used for verification only and is permanently deleted within 14 days of review. We never sell or share your documents with third parties.' },
-  { q: "What if my building isn't listed yet?", a: "Open the directory and use 'Request a missing community'. Tell us the name and location and we'll add it once verified." },
-  { q: 'Who can see what I post?', a: "Only verified members of your own community can see your posts and chats — not even your building's management or developer. Your space is private, not public or searchable." },
-  { q: 'Is this a residents-only space?', a: "Yes. Only verified residents and owners can read and post here. Building management, JMB committees, and developers have no access — so you and your neighbours can speak openly." }
+  { q: msg('Is PropGather free to use?'), a: msg('Yes. Browsing the directory and joining your verified community is completely free for residents and owners.') },
+  { q: msg('How do you verify that someone is a real owner?'), a: msg('During registration you upload your Sale and Purchase Agreement (SPA), a recent utility bill, or a copy of the property title. A platform admin reviews it — usually within 24 hours — before granting access.') },
+  { q: msg('Is my document and data safe?'), a: msg('Your proof document is used for verification only and is permanently deleted within 14 days of review. We never sell or share your documents with third parties.') },
+  { q: msg("What if my building isn't listed yet?"), a: msg("Open the directory and use 'Request a missing community'. Tell us the name and location and we'll add it once verified.") },
+  { q: msg('Who can see what I post?'), a: msg("Only verified members of your own community can see your posts and chats — not even your building's management or developer. Your space is private, not public or searchable.") },
+  { q: msg('Is this a residents-only space?'), a: msg("Yes. Only verified residents and owners can read and post here. Building management, JMB committees, and developers have no access — so you and your neighbours can speak openly.") }
 ]
 
-// Built from the same FAQS the page renders, so the structured data cannot
-// drift from what a visitor actually reads — which is the thing Google checks.
-const FAQ_JSONLD = {
-  '@context': 'https://schema.org',
-  '@type': 'FAQPage',
-  mainEntity: FAQS.map(({ q, a }) => ({
-    '@type': 'Question',
-    name: q,
-    acceptedAnswer: { '@type': 'Answer', text: a }
-  }))
-}
-
 export default function LandingPage() {
+  const t = useT()
   const [projects, setProjects] = useState([])
 
   useEffect(() => {
@@ -69,17 +59,30 @@ export default function LandingPage() {
     const residents = projects.reduce((sum, p) => sum + (p.ownerCount || 0), 0)
     const states = new Set(projects.map(p => p.state)).size
     return [
-      [projects.length || '—', 'Registered projects'],
-      [residents ? residents.toLocaleString() : '—', 'Verified residents'],
-      [states || '—', 'States covered']
+      [projects.length || '—', t('Registered projects')],
+      [residents ? residents.toLocaleString() : '—', t('Verified residents')],
+      [states || '—', t('States covered')]
     ]
-  }, [projects])
+  }, [projects, t])
+
+  // Built from the same FAQS the page renders, in the language it renders them
+  // in, so the structured data cannot drift from what a visitor actually reads —
+  // which is the thing Google checks.
+  const faqJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: FAQS.map(({ q, a }) => ({
+      '@type': 'Question',
+      name: t(q),
+      acceptedAnswer: { '@type': 'Answer', text: t(a) }
+    }))
+  }
 
   return (
     <div>
       {/* No title prop: the homepage keeps the site-level title verbatim rather
           than having " · PropGather.com.my" appended to it twice. */}
-      <Seo path="/" jsonLd={FAQ_JSONLD} />
+      <Seo path="/" jsonLd={faqJsonLd} />
 
       {/* ───────────────── Hero ───────────────── */}
       <div className="pg-hero-anim" style={{ background: C.headerGradientWide, color: '#fff', position: 'relative', overflow: 'hidden' }}>
@@ -101,16 +104,17 @@ export default function LandingPage() {
             borderRadius: 999, padding: '7px 17px', fontSize: 'clamp(12.5px, 3.4vw, 14.5px)', fontWeight: 700, color: '#fff',
             backdropFilter: 'blur(6px)'
           }}>
-            🏡 Malaysia's verified property community
+            🏡 {t("Malaysia's verified property community")}
           </div>
 
           <h1 style={{ margin: '0 auto 16px', fontSize: 'clamp(27px, 7vw, 46px)', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.12, maxWidth: 860 }}>
-            Your building, your neighbours,{' '}
-            <span className="pg-gradient-text">all in one trusted place</span>
+            {t('Your building, your neighbours, {highlight}', {
+              highlight: <span className="pg-gradient-text">{t('all in one trusted place')}</span>
+            })}
           </h1>
 
           <p style={{ margin: '0 auto 30px', color: 'rgba(255,255,255,0.94)', fontSize: 'clamp(15.5px, 4.2vw, 19px)', lineHeight: 1.6, maxWidth: 620 }}>
-            A private space for the residents of your property to discuss, decide, and look after your home together.
+            {t('A private space for the residents of your property to discuss, decide, and look after your home together.')}
           </p>
 
           <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
@@ -120,7 +124,7 @@ export default function LandingPage() {
                 padding: '15px 30px', fontSize: 17, fontWeight: 800, cursor: 'pointer',
                 boxShadow: '0 10px 28px rgba(0,0,0,0.20)'
               }}>
-                Browse communities →
+                {t('Browse communities →')}
               </button>
             </Link>
             <Link to="/login">
@@ -129,7 +133,7 @@ export default function LandingPage() {
                 borderRadius: C.radiusSm, padding: '15px 30px', fontSize: 17, fontWeight: 800, cursor: 'pointer',
                 backdropFilter: 'blur(6px)'
               }}>
-                Log in
+                {t('Log in')}
               </button>
             </Link>
           </div>
@@ -140,7 +144,7 @@ export default function LandingPage() {
             background: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.28)',
             borderRadius: 999, padding: '8px 18px'
           }}>
-            🔐 Free to browse. Only verified owners can join a community.
+            🔐 {t('Free to browse. Only verified owners can join a community.')}
           </div>
 
           {/* Stats */}
@@ -163,12 +167,13 @@ export default function LandingPage() {
           should know what it is before the page argues for it. */}
       <Band background={C.brandLight}>
         <SectionHeading
-          eyebrow="What is PropGather?"
-          title="A private, verified space for your building"
-          subtitle="Every property in Malaysia gets its own members-only space. We check that you really own or live there — then you and your neighbours get the tools to look after the place together."
+          eyebrow={t('What is PropGather?')}
+          title={t('A private, verified space for your building')}
+          subtitle={t('Every property in Malaysia gets its own members-only space. We check that you really own or live there — then you and your neighbours get the tools to look after the place together.')}
         />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 18, marginTop: 36 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))', gap: 18, marginTop: 36 }}>
           {FEATURES.map(f => {
+            // Keyed on the English title, so a feature keeps its colour in every language.
             const [fg, bg] = chipColor(f.title)
             return (
               <div key={f.title} className="pg-card-hover" style={{ ...card, padding: 24 }}>
@@ -177,8 +182,8 @@ export default function LandingPage() {
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: 26, marginBottom: 14
                 }}>{f.icon}</div>
-                <h3 style={{ margin: '0 0 7px', color: C.navy, fontSize: 19 }}>{f.title}</h3>
-                <p style={{ margin: 0, color: C.textMuted, fontSize: 16, lineHeight: 1.6 }}>{f.text}</p>
+                <h3 style={{ margin: '0 0 7px', color: C.navy, fontSize: 19 }}>{t(f.title)}</h3>
+                <p style={{ margin: 0, color: C.textMuted, fontSize: 16, lineHeight: 1.6 }}>{t(f.text)}</p>
               </div>
             )
           })}
@@ -188,9 +193,9 @@ export default function LandingPage() {
       {/* ───────────────── How it works ───────────────── */}
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '64px 24px 16px' }}>
         <SectionHeading
-          eyebrow="Getting started is simple"
-          title="Three steps to join your community"
-          subtitle="No paperwork queues, no guesswork. If you own your home, you're a few minutes away from being in."
+          eyebrow={t('Getting started is simple')}
+          title={t('Three steps to join your community')}
+          subtitle={t("No paperwork queues, no guesswork. If you own your home, you're a few minutes away from being in.")}
         />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginTop: 36 }}>
           {STEPS.map(s => (
@@ -201,8 +206,8 @@ export default function LandingPage() {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 24, fontWeight: 800, boxShadow: '0 6px 18px rgba(64,129,198,0.32)'
               }}>{s.n}</div>
-              <h3 style={{ margin: '0 0 8px', color: C.navy, fontSize: 20 }}>{s.title}</h3>
-              <p style={{ margin: 0, color: C.textMuted, fontSize: 16, lineHeight: 1.6 }}>{s.text}</p>
+              <h3 style={{ margin: '0 0 8px', color: C.navy, fontSize: 20 }}>{t(s.title)}</h3>
+              <p style={{ margin: 0, color: C.textMuted, fontSize: 16, lineHeight: 1.6 }}>{t(s.text)}</p>
             </div>
           ))}
         </div>
@@ -211,22 +216,22 @@ export default function LandingPage() {
       {/* ───────────────── Comparison ───────────────── */}
       <div style={{ maxWidth: 920, margin: '0 auto', padding: '56px 24px 16px' }}>
         <SectionHeading
-          eyebrow="Why not just a group chat?"
-          title="The difference is night and day"
-          subtitle="A WhatsApp or Facebook group was never built to run a building. PropGather is."
+          eyebrow={t('Why not just a group chat?')}
+          title={t('The difference is night and day')}
+          subtitle={t('A WhatsApp or Facebook group was never built to run a building. PropGather is.')}
         />
         <div style={{ ...card, padding: 0, overflow: 'hidden', marginTop: 36 }}>
           {/* header row */}
           <div className="pg-compare-row" style={{ background: C.neutralBg, fontWeight: 800, color: C.navy }}>
-            <div style={{ padding: '14px 18px', fontSize: 15 }}>What you get</div>
+            <div style={{ padding: '14px 18px', fontSize: 15 }}>{t('What you get')}</div>
             <div style={{ padding: '14px 12px', textAlign: 'center', fontSize: 15, color: C.blue, background: C.blueLight }}>PropGather</div>
-            <div style={{ padding: '14px 12px', textAlign: 'center', fontSize: 15, color: C.textMuted }}>Group chat</div>
+            <div style={{ padding: '14px 12px', textAlign: 'center', fontSize: 15, color: C.textMuted }}>{t('Group chat')}</div>
           </div>
           {COMPARE.map(([label, a, b], i) => (
             <div key={label} className="pg-compare-row" style={{
               borderTop: `1px solid ${C.border}`, background: i % 2 ? '#fff' : '#fafcfe'
             }}>
-              <div style={{ padding: '14px 18px', fontSize: 16, color: C.text, fontWeight: 600 }}>{label}</div>
+              <div style={{ padding: '14px 18px', fontSize: 16, color: C.text, fontWeight: 600 }}>{t(label)}</div>
               <div style={{ padding: '14px 12px', textAlign: 'center', background: 'rgba(64,129,198,0.06)' }}>
                 <Mark on={a} />
               </div>
@@ -241,25 +246,25 @@ export default function LandingPage() {
       {/* ───────────────── Testimonials ───────────────── */}
       <Band background={C.brandLight} style={{ marginTop: 56 }}>
         <SectionHeading
-          eyebrow="Loved by communities"
-          title="Neighbours, committees, and seniors alike"
-          subtitle="Real talk from the people who use PropGather to look after their homes."
+          eyebrow={t('Loved by communities')}
+          title={t('Neighbours, committees, and seniors alike')}
+          subtitle={t('Real talk from the people who use PropGather to look after their homes.')}
         />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18, marginTop: 36 }}>
-          {TESTIMONIALS.map(t => {
-            const [fg, bg] = chipColor(t.name)
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 18, marginTop: 36 }}>
+          {TESTIMONIALS.map(item => {
+            const [fg, bg] = chipColor(item.name)
             return (
-              <div key={t.name} style={{ ...card, padding: 24, display: 'flex', flexDirection: 'column' }}>
+              <div key={item.name} style={{ ...card, padding: 24, display: 'flex', flexDirection: 'column' }}>
                 <div style={{ color: '#f59e0b', fontSize: 18, letterSpacing: 2, marginBottom: 10 }} aria-hidden="true">★★★★★</div>
-                <p style={{ margin: '0 0 18px', color: C.text, fontSize: 16.5, lineHeight: 1.6, flex: 1 }}>"{t.quote}"</p>
+                <p style={{ margin: '0 0 18px', color: C.text, fontSize: 16.5, lineHeight: 1.6, flex: 1 }}>"{t(item.quote)}"</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div style={{
                     width: 44, height: 44, borderRadius: '50%', background: bg, color: fg,
                     display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16, flexShrink: 0
-                  }}>{initials(t.name)}</div>
+                  }}>{initials(item.name)}</div>
                   <div>
-                    <div style={{ fontWeight: 800, color: C.navy, fontSize: 15.5 }}>{t.name}</div>
-                    <div style={{ color: C.textMuted, fontSize: 14 }}>{t.role}</div>
+                    <div style={{ fontWeight: 800, color: C.navy, fontSize: 15.5 }}>{item.name}</div>
+                    <div style={{ color: C.textMuted, fontSize: 14 }}>{t('Owner')} · {item.place}</div>
                   </div>
                 </div>
               </div>
@@ -273,16 +278,16 @@ export default function LandingPage() {
           promises that used to be repeated in a trust band of their own. */}
       <div style={{ maxWidth: 800, margin: '0 auto', padding: '56px 24px 16px' }}>
         <SectionHeading
-          eyebrow="Questions, answered"
-          title="Everything you might be wondering"
-          subtitle="Still unsure? Here are the things people ask us most before joining."
+          eyebrow={t('Questions, answered')}
+          title={t('Everything you might be wondering')}
+          subtitle={t('Still unsure? Here are the things people ask us most before joining.')}
         />
         <div style={{ display: 'grid', gap: 12, marginTop: 36 }}>
-          {FAQS.map(f => <FaqItem key={f.q} q={f.q} a={f.a} />)}
+          {FAQS.map(f => <FaqItem key={f.q} q={t(f.q)} a={t(f.a)} />)}
         </div>
         <p style={{ textAlign: 'center', marginTop: 24, fontSize: 16, color: C.textMuted }}>
-          Have another question?{' '}
-          <Link to="/contact" style={{ color: C.blue, fontWeight: 800 }}>Contact us →</Link>
+          {t('Have another question?')}{' '}
+          <Link to="/contact" style={{ color: C.blue, fontWeight: 800 }}>{t('Contact us →')}</Link>
         </p>
       </div>
 
@@ -291,10 +296,10 @@ export default function LandingPage() {
         <div style={{ position: 'absolute', inset: 0, background: C.heroGlow, pointerEvents: 'none' }} />
         <div style={{ maxWidth: 760, margin: '0 auto', padding: 'clamp(44px, 9vw, 60px) clamp(18px, 5vw, 24px)', position: 'relative', zIndex: 1, textAlign: 'center' }}>
           <h2 style={{ margin: '0 0 12px', fontSize: 'clamp(24px, 6vw, 34px)', fontWeight: 800, letterSpacing: '-0.015em', lineHeight: 1.18 }}>
-            Ready to meet your neighbours?
+            {t('Ready to meet your neighbours?')}
           </h2>
           <p style={{ margin: '0 auto 28px', color: 'rgba(255,255,255,0.94)', fontSize: 'clamp(15.5px, 4.2vw, 18px)', lineHeight: 1.6, maxWidth: 560 }}>
-            Find your property in the directory and request to join. It only takes a few minutes to verify.
+            {t('Find your property in the directory and request to join. It only takes a few minutes to verify.')}
           </p>
           <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link to="/discover">
@@ -303,7 +308,7 @@ export default function LandingPage() {
                 padding: '15px 32px', fontSize: 17, fontWeight: 800, cursor: 'pointer',
                 boxShadow: '0 10px 28px rgba(0,0,0,0.22)'
               }}>
-                Browse communities →
+                {t('Browse communities →')}
               </button>
             </Link>
             <Link to="/register">
@@ -312,7 +317,7 @@ export default function LandingPage() {
                 borderRadius: C.radiusSm, padding: '15px 32px', fontSize: 17, fontWeight: 800, cursor: 'pointer',
                 backdropFilter: 'blur(6px)'
               }}>
-                Verify my ownership
+                {t('Verify my ownership')}
               </button>
             </Link>
           </div>
@@ -333,13 +338,14 @@ function Band({ children, background, style }) {
 }
 
 function Mark({ on }) {
+  const t = useT()
   if (on) {
     return (
       <span style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         width: 28, height: 28, borderRadius: '50%', background: C.successBg,
         color: C.success, fontWeight: 900, fontSize: 16
-      }} aria-label="Yes">✓</span>
+      }} aria-label={t('Yes')}>✓</span>
     )
   }
   return (
@@ -347,7 +353,7 @@ function Mark({ on }) {
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
       width: 28, height: 28, borderRadius: '50%', background: C.neutralBg,
       color: C.textFaint, fontWeight: 900, fontSize: 16
-    }} aria-label="No">✕</span>
+    }} aria-label={t('No')}>✕</span>
   )
 }
 

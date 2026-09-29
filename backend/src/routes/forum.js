@@ -18,9 +18,12 @@ const CATEGORIES = [
   'Contractors & Services', 'Marketplace', 'Facilities', 'General Discussion'
 ]
 
+// The maxima match the columns (thread_polls.question VARCHAR(300),
+// thread_poll_options.label VARCHAR(200)); anything longer used to reach MySQL
+// and come back as a 500.
 const pollSchema = z.object({
-  question: z.string().trim().min(1, 'Please enter a question for your poll.'),
-  options: z.array(z.string().trim().min(1, 'Poll options can\'t be left blank.'))
+  question: z.string().trim().min(1, 'Please enter a question for your poll.').max(300, 'Your poll question is too long — please keep it under 300 characters.'),
+  options: z.array(z.string().trim().min(1, 'Poll options can\'t be left blank.').max(200, 'Each poll option needs to be under 200 characters.'))
     .min(2, 'A poll needs at least 2 options.')
     .max(8, 'A poll can have at most 8 options.')
 })
@@ -36,24 +39,34 @@ const createThreadSchema = z.object({
 const PAGE_SIZE = 20
 const MAX_PAGE_SIZE = 50
 
-// Author details and the upvote tally come back with the thread row. Querying
-// per thread — plus one per poll option — would make listing a busy forum
-// hundreds of round trips.
+// Author details, the upvote and reply tallies, and whether the viewer has
+// upvoted come back with the thread row. Querying per thread — plus one per poll
+// option — would make listing a busy forum hundreds of round trips.
+//
+// The one placeholder is the viewer's user id, so every params list built on
+// this starts with it. The reply count is COUNT(*) over forum_replies, not the
+// forum_threads.replies column (see migration 0013).
 const THREAD_SELECT = `
   SELECT t.*,
          u.name  AS author_name,
          cm.unit AS author_unit,
          cm.tier AS author_tier,
-         (SELECT COUNT(*) FROM forum_upvotes fu WHERE fu.thread_id = t.id) AS upvote_count
+         (SELECT COUNT(*) FROM forum_upvotes fu WHERE fu.thread_id = t.id) AS upvote_count,
+         (SELECT COUNT(*) FROM forum_replies fr WHERE fr.thread_id = t.id) AS reply_count,
+         EXISTS (SELECT 1 FROM forum_upvotes mu WHERE mu.thread_id = t.id AND mu.user_id = ?) AS upvoted_by_me
   FROM forum_threads t
   LEFT JOIN users u ON u.id = t.author_user_id
   LEFT JOIN community_memberships cm
     ON cm.user_id = t.author_user_id AND cm.project_id = t.project_id
 `
 
-// Loads the polls for a set of threads — with their options and vote counts —
-// in two queries total, however many threads there are.
-async function loadPolls(db, threadIds) {
+// Loads the polls for a set of threads — with their options, vote counts and
+// the viewer's own vote — in three queries total, however many threads there are.
+//
+// Counts are only sent once the viewer has voted (or to an admin, who moderates
+// rather than votes). PollView hides them until then so early results don't
+// sway anyone, and a hidden result the API still hands out isn't hidden.
+async function loadPolls(db, threadIds, viewer) {
   const byThread = new Map()
   if (!threadIds.length) return byThread
 
@@ -75,24 +88,36 @@ async function loadPolls(db, threadIds) {
     ORDER BY o.position
   `, pollIds)
 
+  const myVotes = await db.allDynamic(
+    `SELECT poll_id, option_id FROM thread_poll_votes WHERE user_id = ? AND poll_id IN (${pollPlaceholders})`,
+    [viewer.id, ...pollIds]
+  )
+  const myVoteByPoll = new Map(myVotes.map(v => [v.poll_id, v.option_id]))
+
   const optionsByPoll = new Map()
   for (const o of options) {
     if (!optionsByPoll.has(o.poll_id)) optionsByPoll.set(o.poll_id, [])
-    optionsByPoll.get(o.poll_id).push({ id: o.id, label: o.label, votes: Number(o.votes) })
+    optionsByPoll.get(o.poll_id).push(o)
   }
 
   for (const p of polls) {
+    const votedByMe = myVoteByPoll.get(p.id) || false
+    const showCounts = !!votedByMe || viewer.role === 'admin'
     byThread.set(p.thread_id, {
       id: p.id,
       question: p.question,
       expiresAt: p.expires_at,
-      options: optionsByPoll.get(p.id) || []
+      votedByMe,
+      options: (optionsByPoll.get(p.id) || []).map(o => ({ id: o.id, label: o.label, votes: showCounts ? Number(o.votes) : null }))
     })
   }
   return byThread
 }
 
-async function serializeThread(row, poll = null) {
+// `mine` tells the page which posts to offer edit/delete on. It used to compare
+// display names, which put those buttons on every post by a neighbour who
+// shares your name.
+async function serializeThread(row, viewer, poll = null) {
   return {
     id: row.id,
     category: row.category,
@@ -100,7 +125,9 @@ async function serializeThread(row, poll = null) {
     body: row.body,
     pinned: !!row.pinned,
     upvotes: Number(row.upvote_count),
-    replies: row.replies,
+    upvotedByMe: !!row.upvoted_by_me,
+    replies: Number(row.reply_count),
+    mine: row.author_user_id === viewer.id,
     createdAt: row.created_at,
     editedAt: row.edited_at || null,
     attachments: await withAttachmentUrls(parseAttachments(row.attachments)),
@@ -111,12 +138,13 @@ async function serializeThread(row, poll = null) {
   }
 }
 
-// Fetches one thread and its poll, for the single-thread responses.
-async function fetchThread(db, threadId) {
-  const row = await db.get(`${THREAD_SELECT} WHERE t.id = ?`, [threadId])
+// Fetches one thread and its poll as `viewer` sees them, for the single-thread
+// responses.
+async function fetchThread(db, threadId, viewer) {
+  const row = await db.get(`${THREAD_SELECT} WHERE t.id = ?`, [viewer.id, threadId])
   if (!row) return null
-  const polls = await loadPolls(db, [row.id])
-  return serializeThread(row, polls.get(row.id) || null)
+  const polls = await loadPolls(db, [row.id], viewer)
+  return serializeThread(row, viewer, polls.get(row.id) || null)
 }
 
 // One page at a time, pinned first then newest: ?limit= (default 20, max 50),
@@ -155,14 +183,16 @@ forumRouter.get('/', requireAuth, requireMembership, wrap(async (req, res, next)
   // (see db/index.js).
   const rows = await db.allDynamic(
     `${THREAD_SELECT} ${where} ORDER BY t.pinned DESC, t.created_at DESC, t.id DESC LIMIT ?`,
-    [...params, limit]
+    [req.user.id, ...params, limit]
   )
 
-  const polls = await loadPolls(db, rows.map(r => r.id))
-  res.json(await Promise.all(rows.map(r => serializeThread(r, polls.get(r.id) || null))))
+  const polls = await loadPolls(db, rows.map(r => r.id), req.user)
+  res.json(await Promise.all(rows.map(r => serializeThread(r, req.user, polls.get(r.id) || null))))
 }))
 
-forumRouter.post('/', requireAuth, requireMembership, validate(createThreadSchema), blockSensitiveContent('title', 'body'), wrap(async (req, res, next) => {
+const pollText = (body) => (body.poll ? [body.poll.question, ...body.poll.options] : [])
+
+forumRouter.post('/', requireAuth, requireMembership, validate(createThreadSchema), blockSensitiveContent('title', 'body', pollText), wrap(async (req, res, next) => {
   const { category, title, body, poll } = req.body
   const projectId = req.params.projectId
   const checked = await verifyAttachments(req.body.attachments, { projectId, userId: req.user.id })
@@ -190,7 +220,7 @@ forumRouter.post('/', requireAuth, requireMembership, validate(createThreadSchem
     }
   })
 
-  res.status(201).json(await fetchThread(db, threadId))
+  res.status(201).json(await fetchThread(db, threadId, req.user))
 }))
 
 const editThreadSchema = z.object({
@@ -218,9 +248,12 @@ forumRouter.patch('/:threadId', requireAuth, requireMembership, validate(editThr
   if (thread.author_user_id !== req.user.id) return next(forbidden('Only the person who wrote this post can edit it.'))
   if (thread.edited_at) return next(conflict('This post has already been edited. Posts can only be edited once.'))
 
+  // The `edited_at IS NULL` guard is what makes it one edit: two saves racing
+  // past the check above would otherwise both land.
   const editedAt = new Date().toISOString()
-  await db.run('UPDATE forum_threads SET title = ?, body = ?, edited_at = ? WHERE id = ?',
+  const { changes } = await db.run('UPDATE forum_threads SET title = ?, body = ?, edited_at = ? WHERE id = ? AND edited_at IS NULL',
     [req.body.title, req.body.body, editedAt, thread.id])
+  if (!changes) return next(conflict('This post has already been edited. Posts can only be edited once.'))
 
   await recordAudit(db, {
     actorUserId: req.user.id,
@@ -232,7 +265,7 @@ forumRouter.patch('/:threadId', requireAuth, requireMembership, validate(editThr
     metadata: { titleChanged: thread.title !== req.body.title, bodyChanged: thread.body !== req.body.body }
   })
 
-  res.json(await fetchThread(db, thread.id))
+  res.json(await fetchThread(db, thread.id, req.user))
 }))
 
 forumRouter.post('/:threadId/upvote', requireAuth, requireMembership, wrap(async (req, res, next) => {
@@ -243,7 +276,18 @@ forumRouter.post('/:threadId/upvote', requireAuth, requireMembership, wrap(async
   // Idempotent by the (thread_id, user_id) primary key — upvoting twice is a
   // no-op rather than a second vote.
   await db.run('INSERT IGNORE INTO forum_upvotes (thread_id, user_id) VALUES (?, ?)', [row.id, req.user.id])
-  res.json(await fetchThread(db, row.id))
+  res.json(await fetchThread(db, row.id, req.user))
+}))
+
+// Takes the viewer's upvote back. Removing one that isn't there is a no-op, the
+// mirror of upvoting twice.
+forumRouter.delete('/:threadId/upvote', requireAuth, requireMembership, wrap(async (req, res, next) => {
+  const db = getDb()
+  const row = await db.get('SELECT id FROM forum_threads WHERE id = ? AND project_id = ?', [req.params.threadId, req.params.projectId])
+  if (!row) return next(notFound("We couldn't find that post — it may have been removed."))
+
+  await db.run('DELETE FROM forum_upvotes WHERE thread_id = ? AND user_id = ?', [row.id, req.user.id])
+  res.json(await fetchThread(db, row.id, req.user))
 }))
 
 const pollVoteSchema = z.object({ optionId: z.string().min(1, 'Please choose an option before voting.') })
@@ -260,7 +304,7 @@ forumRouter.post('/:threadId/poll-vote', requireAuth, requireMembership, validat
   if (!option) return next(badRequest("That poll option is no longer available. Please refresh and try again."))
 
   await db.run('INSERT IGNORE INTO thread_poll_votes (poll_id, user_id, option_id) VALUES (?, ?, ?)', [pollRow.id, req.user.id, option.id])
-  res.json(await fetchThread(db, thread.id))
+  res.json(await fetchThread(db, thread.id, req.user))
 }))
 
 // Lets a resident remove their own post (or an admin remove any post) — the
@@ -273,6 +317,11 @@ forumRouter.delete('/:threadId', requireAuth, requireMembership, wrap(async (req
   if (thread.author_user_id !== req.user.id && req.user.role !== 'admin') return next(forbidden('You can only delete your own posts.'))
 
   await withTransaction(async (tx) => {
+    // Locked first so a reply being posted right now either lands before this
+    // (and is deleted below) or waits and then finds the thread gone — see
+    // POST .../replies. Without it a reply slipping in between the two deletes
+    // fails the forum_threads delete on its foreign key.
+    await tx.get('SELECT id FROM forum_threads WHERE id = ? FOR UPDATE', [thread.id])
     const poll = await tx.get('SELECT id FROM thread_polls WHERE thread_id = ?', [thread.id])
     if (poll) {
       await tx.run('DELETE FROM thread_poll_votes WHERE poll_id = ?', [poll.id])
@@ -280,6 +329,7 @@ forumRouter.delete('/:threadId', requireAuth, requireMembership, wrap(async (req
       await tx.run('DELETE FROM thread_polls WHERE id = ?', [poll.id])
     }
     await tx.run('DELETE FROM forum_upvotes WHERE thread_id = ?', [thread.id])
+    await tx.run('DELETE FROM forum_replies WHERE thread_id = ?', [thread.id])
     await tx.run('DELETE FROM forum_threads WHERE id = ?', [thread.id])
   })
   await deleteAttachmentObjects(attachmentKeys(thread.attachments))
@@ -292,6 +342,116 @@ forumRouter.delete('/:threadId', requireAuth, requireMembership, wrap(async (req
     targetId: thread.id,
     projectId: req.params.projectId,
     metadata: { authorUserId: thread.author_user_id, deletedBySelf: thread.author_user_id === req.user.id }
+  })
+
+  res.json({ ok: true })
+}))
+
+// ── Replies ──────────────────────────────────────────────────────────────────
+// Text only, like a chat message without the files: a reply is a response to the
+// post, and anything worth a photo is worth its own thread. Delete-only as well —
+// no edit — since a thread's replies read as a conversation.
+
+const REPLY_PAGE_SIZE = 50
+const REPLY_MAX_PAGE_SIZE = 100
+
+const replySchema = z.object({
+  body: z.string().trim().min(1, 'Please write something in your reply.').max(2000, 'Your reply is too long — please keep it under 2,000 characters.')
+})
+
+// The membership join goes through the thread for its project: a reply row
+// doesn't carry one.
+const REPLY_SELECT = `
+  SELECT r.*, u.name AS author_name, cm.unit AS author_unit, cm.tier AS author_tier
+  FROM forum_replies r
+  JOIN forum_threads t ON t.id = r.thread_id
+  LEFT JOIN users u ON u.id = r.author_user_id
+  LEFT JOIN community_memberships cm
+    ON cm.user_id = r.author_user_id AND cm.project_id = t.project_id
+`
+
+const serializeReply = (row, viewer) => ({
+  id: row.id,
+  body: row.body,
+  createdAt: row.created_at,
+  mine: row.author_user_id === viewer.id,
+  author: row.author_name
+    ? { name: row.author_name, unit: row.author_unit || '-', tier: row.author_tier || 'Owner', verified: true }
+    : null
+})
+
+const findThread = (db, req) =>
+  db.get('SELECT id FROM forum_threads WHERE id = ? AND project_id = ?', [req.params.threadId, req.params.projectId])
+
+// The newest page of a thread's replies, oldest first so they read top to
+// bottom: ?limit= (default 50, max 100) and ?before=<replyId> for the page older
+// than that one — the same shape as a chat channel.
+forumRouter.get('/:threadId/replies', requireAuth, requireMembership, wrap(async (req, res, next) => {
+  const db = getDb()
+  const thread = await findThread(db, req)
+  if (!thread) return next(notFound("We couldn't find that post — it may have been removed."))
+  const limit = pageLimit(req.query.limit, REPLY_PAGE_SIZE, REPLY_MAX_PAGE_SIZE)
+
+  let where = 'WHERE r.thread_id = ?'
+  const params = [thread.id]
+  const { before } = req.query
+  if (before !== undefined) {
+    const cursor = typeof before === 'string'
+      ? await db.get('SELECT id, created_at FROM forum_replies WHERE id = ? AND thread_id = ?', [before, thread.id])
+      : null
+    if (!cursor) return next(badRequest('That reply is no longer available. Please reload the post.'))
+    where += ' AND (r.created_at < ? OR (r.created_at = ? AND r.id < ?))'
+    params.push(cursor.created_at, cursor.created_at, cursor.id)
+  }
+
+  // allDynamic rather than all: the SQL's shape depends on whether there is a
+  // cursor (see db/index.js).
+  const rows = await db.allDynamic(
+    `${REPLY_SELECT} ${where} ORDER BY r.created_at DESC, r.id DESC LIMIT ?`,
+    [...params, limit]
+  )
+  rows.reverse()
+  res.json(rows.map(r => serializeReply(r, req.user)))
+}))
+
+forumRouter.post('/:threadId/replies', requireAuth, requireMembership, validate(replySchema), blockSensitiveContent('body'), wrap(async (req, res, next) => {
+  const db = getDb()
+  const replyId = id('rep')
+  // FOR SHARE holds the thread against a concurrent delete (which takes FOR
+  // UPDATE on it) until the reply is in, so the two serialise instead of
+  // racing: a delete already under way makes this wait and then 404.
+  const inserted = await withTransaction(async (tx) => {
+    const thread = await tx.get('SELECT id FROM forum_threads WHERE id = ? AND project_id = ? FOR SHARE', [req.params.threadId, req.params.projectId])
+    if (!thread) return false
+    await tx.run('INSERT INTO forum_replies (id, thread_id, author_user_id, body, created_at) VALUES (?, ?, ?, ?, ?)',
+      [replyId, thread.id, req.user.id, req.body.body, new Date().toISOString()])
+    return true
+  })
+  if (!inserted) return next(notFound("We couldn't find that post — it may have been removed."))
+
+  res.status(201).json(serializeReply(await db.get(`${REPLY_SELECT} WHERE r.id = ?`, [replyId]), req.user))
+}))
+
+// The author or an admin — same rule, and same PDPA reasoning, as deleting a
+// thread.
+forumRouter.delete('/:threadId/replies/:replyId', requireAuth, requireMembership, wrap(async (req, res, next) => {
+  const db = getDb()
+  const thread = await findThread(db, req)
+  if (!thread) return next(notFound("We couldn't find that post — it may have been removed."))
+  const reply = await db.get('SELECT * FROM forum_replies WHERE id = ? AND thread_id = ?', [req.params.replyId, thread.id])
+  if (!reply) return next(notFound("We couldn't find that reply — it may have been removed."))
+  if (reply.author_user_id !== req.user.id && req.user.role !== 'admin') return next(forbidden('You can only delete your own replies.'))
+
+  await db.run('DELETE FROM forum_replies WHERE id = ?', [reply.id])
+
+  await recordAudit(db, {
+    actorUserId: req.user.id,
+    actorRole: req.user.role,
+    action: 'forum.reply_deleted',
+    targetType: 'forum_reply',
+    targetId: reply.id,
+    projectId: req.params.projectId,
+    metadata: { threadId: thread.id, authorUserId: reply.author_user_id, deletedBySelf: reply.author_user_id === req.user.id }
   })
 
   res.json({ ok: true })

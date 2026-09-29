@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { freshApp, authed, login, RESIDENT } from './helpers.js'
+import { freshApp, authed, login, RESIDENT, ADMIN } from './helpers.js'
 
 let app
 let residentToken
@@ -10,11 +10,18 @@ beforeEach(async () => {
 })
 
 describe('GET /api/projects/:projectId/polls', () => {
-  it('lists seeded polls with vote counts and votedByMe=false', async () => {
+  it('lists seeded polls with counts withheld until the member votes', async () => {
     const res = await authed(app, residentToken).get('/api/projects/p1/polls')
     expect(res.status).toBe(200)
     const poll = res.body.find(p => p.id === 'poll1-1')
     expect(poll.votedByMe).toBe(false)
+    expect(poll.options.every(o => o.votes === null)).toBe(true)
+  })
+
+  it('shows an admin the counts without voting', async () => {
+    const adminToken = await login(app, ADMIN.email, ADMIN.password)
+    const res = await authed(app, adminToken).get('/api/projects/p1/polls')
+    const poll = res.body.find(p => p.id === 'poll1-1')
     expect(poll.options).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'Yes, install CCTV', votes: 142 })
     ]))

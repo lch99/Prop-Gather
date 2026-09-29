@@ -16,16 +16,17 @@
 
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
+import { msg, useT } from './i18n'
 
 // The canonical origin. Canonical/OG URLs must be absolute and must point at
 // the real public site, never at localhost or the GitHub Pages mirror —
 // otherwise the mirror competes with production for the same keywords.
 export const SITE_URL = (import.meta.env.VITE_SITE_URL || 'https://propgather.com.my').replace(/\/+$/, '')
 export const SITE_NAME = 'PropGather.com.my'
-export const DEFAULT_TITLE = "PropGather.com.my — Malaysia's Verified Property Community"
-export const DEFAULT_DESCRIPTION =
-  'A private, verified space for the residents of your Malaysian condo or housing project — ' +
-  'forum, chat, polls, defect tracking, documents, and fees. Free to browse; join your own community once verified.'
+export const DEFAULT_TITLE = msg("PropGather.com.my — Malaysia's Verified Property Community")
+export const DEFAULT_DESCRIPTION = msg(
+  'A private, verified space for the residents of your Malaysian condo or housing project — forum, chat, polls, defect tracking, documents, and fees. Free to browse; join your own community once verified.'
+)
 
 // og:image should be an absolute URL and ideally 1200×630. This is the 256×256
 // brand mark, which previews as a small square thumbnail — replace it with a
@@ -104,7 +105,7 @@ function setJsonLd(data) {
 export default function Seo({
   title,
   bareTitle = false,
-  description = DEFAULT_DESCRIPTION,
+  description: pageDescription,
   path,
   noindex = false,
   jsonLd = null,
@@ -112,9 +113,13 @@ export default function Seo({
   type = 'website'
 }) {
   const location = useLocation()
+  // Pages pass their title and description already translated; the site-wide
+  // defaults are translated here. Crawlers get English — see src/i18n.jsx.
+  const t = useT()
+  const description = pageDescription ?? t(DEFAULT_DESCRIPTION)
   const canonicalPath = path || location.pathname
   const url = absoluteUrl(canonicalPath)
-  const fullTitle = !title ? DEFAULT_TITLE : bareTitle ? title : `${title}${TITLE_SUFFIX}`
+  const fullTitle = !title ? t(DEFAULT_TITLE) : bareTitle ? title : `${title}${TITLE_SUFFIX}`
   // Objects are new on every render; serialising keeps the effect from re-running
   // (and rewriting the whole head) on each parent re-render.
   const jsonLdKey = jsonLd ? JSON.stringify(jsonLd) : ''

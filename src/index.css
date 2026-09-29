@@ -318,8 +318,11 @@ input:focus, textarea:focus, select:focus {
     width: 100%;
   }
 
+  /* !important overrides the inline flex: '1 1 170px' — two 170px bases don't
+     fit side by side at 375px, so the second select ran off the card */
   .pg-discover-search-filters select {
-    flex: 1 1 0;
+    flex: 1 1 0 !important;
+    min-width: 0;
   }
 
   /* !important overrides the inline flex: '2 1 260px' — without it the 260px basis
@@ -329,10 +332,12 @@ input:focus, textarea:focus, select:focus {
     width: 100%;
   }
 
-  /* logo takes its own full row on mobile */
-  .pg-header-logo {
+  /* logo (and the language picker beside it) take their own full row on mobile */
+  .pg-header-brand {
     flex: 0 0 100%;
   }
+
+  .pg-lang-desktop { display: none !important; }
 
   /* nav + user section share the second row; nav items use short labels */
   .pg-header-nav {
@@ -358,6 +363,18 @@ input:focus, textarea:focus, select:focus {
 @media (min-width: 641px) {
   .pg-nav-full { display: inline; }
   .pg-nav-short { display: none; }
+  .pg-lang-mobile { display: none !important; }
+}
+
+/* header language picker (components/LanguageSwitcher.jsx) — the real <select>
+   is invisible on top of the pill, so the pill has to show its focus ring */
+.pg-lang:focus-within {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+.pg-lang:hover {
+  background: rgba(255, 255, 255, 0.26) !important;
 }
 
 /* landing page: PropGather-vs-group-chat table. Below a 28px tick, the two
@@ -419,11 +436,32 @@ input:focus, textarea:focus, select:focus {
   }
 }
 
+/* loading indicators (components/Loading.jsx) */
+@keyframes pg-spin {
+  to { transform: rotate(360deg); }
+}
+
+.pg-spin {
+  animation: pg-spin 0.9s linear infinite;
+}
+
+@keyframes pg-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+.pg-breathe {
+  animation: pg-breathe 1.8s ease-in-out infinite;
+}
+
 /* respect users who prefer reduced motion — keeps the design accessible */
 @media (prefers-reduced-motion: reduce) {
-  .pg-float, .pg-hero-anim, .pg-gradient-text, .pg-shine::after, .pg-pop, .pg-fade-in, .pg-skel {
+  .pg-float, .pg-hero-anim, .pg-gradient-text, .pg-shine::after, .pg-pop, .pg-fade-in, .pg-skel, .pg-breathe {
     animation: none !important;
   }
+  /* The spinner is the one sign something is still happening, so it slows
+     down rather than stopping. */
+  .pg-spin { animation-duration: 2.4s !important; }
   .pg-arrow { transition: none; }
 }
 

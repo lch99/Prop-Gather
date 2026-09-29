@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../api'
 import { C, card, button } from '../theme'
+import { msg, useT } from '../i18n'
 
 // The one place sharing lives. Discover, My Communities, the admin overview and
 // the project hero all open the same sheet, so the wording a resident sends to
@@ -36,12 +37,16 @@ export function communityShareUrl(projectId) {
 // Deliberately not written in the first person ("join me…"): the same sheet is
 // opened by verified residents, by people still deciding whether to join, and by
 // admins, and only the first of those could honestly claim to live there.
-export function shareMessage(project) {
+//
+// Written in the sharer's own language: they are sending it to their neighbours,
+// who most likely read the same one.
+export function shareMessage(project, t) {
   const where = [project.city, project.state].filter(Boolean).join(', ')
-  return `${project.name} is on PropGather${where ? ` (${where})` : ''} — the private, residents-only space for this building: forum, chat, defect reports, documents and community polls, for verified owners and residents.`
+  const name = where ? `${project.name} (${where})` : project.name
+  return t('{name} is on PropGather — the private, residents-only space for this building: forum, chat, defect reports, documents and community polls, for verified owners and residents.', { name })
 }
 
-const shareSubject = (project) => `${project.name} on PropGather`
+const shareSubject = (project, t) => t('{name} on PropGather', { name: project.name })
 
 // Tints are deepened past each brand's raw hue for the same reason theme.js
 // deepens its chip colours: white has to stay legible on them for older eyes.
@@ -65,7 +70,7 @@ const CHANNELS = [
   {
     // sameTab: a mailto: opened in a new tab hands the message to the mail
     // client and then leaves an empty tab sitting behind it.
-    key: 'email', label: 'Email', icon: '✉️', tint: '#4B5563', sameTab: true,
+    key: 'email', label: msg('Email'), icon: '✉️', tint: '#4B5563', sameTab: true,
     href: ({ url, text, subject }) => `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(`${text}\n\n${url}`)}`
   }
 ]
@@ -103,10 +108,11 @@ async function copyToClipboard(text) {
 }
 
 function ShareSheet({ project, onClose }) {
+  const t = useT()
   const [copied, setCopied] = useState(false)
   const url = communityShareUrl(project.id)
-  const text = shareMessage(project)
-  const subject = shareSubject(project)
+  const text = shareMessage(project, t)
+  const subject = shareSubject(project, t)
   const canUseNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
 
   useEffect(() => {
@@ -162,23 +168,24 @@ function ShareSheet({ project, onClose }) {
         className="pg-share-sheet pg-pop"
         role="dialog"
         aria-modal="true"
-        aria-label={`Share ${project.name}`}
+        aria-label={t('Share {name}', { name: project.name })}
         onClick={e => e.stopPropagation()}
         style={{ ...card, padding: 22, position: 'relative', maxHeight: '92vh', overflowY: 'auto' }}
       >
         <button
           onClick={onClose}
-          aria-label="Close share options"
+          aria-label={t('Close share options')}
           style={{
             position: 'absolute', top: 12, right: 14, border: 'none', background: 'none',
             fontSize: 22, cursor: 'pointer', color: C.textMuted, lineHeight: 1
           }}
         >×</button>
 
-        <h3 style={{ margin: '0 0 4px', color: C.navy, fontSize: 19, paddingRight: 28 }}>Share this community</h3>
+        <h3 style={{ margin: '0 0 4px', color: C.navy, fontSize: 19, paddingRight: 28 }}>{t('Share this community')}</h3>
         <p style={{ margin: '0 0 16px', color: C.textMuted, fontSize: 14, lineHeight: 1.55 }}>
-          Send <strong style={{ color: C.navy }}>{project.name}</strong> to your neighbours. Anyone can open the
-          link — only verified residents can see what's inside.
+          {t("Send {name} to your neighbours. Anyone can open the link — only verified residents can see what's inside.", {
+            name: <strong style={{ color: C.navy }}>{project.name}</strong>
+          })}
         </p>
 
         <div className="pg-share-grid">
@@ -191,14 +198,14 @@ function ShareSheet({ project, onClose }) {
               style={tile}
             >
               <span aria-hidden="true" style={tileIcon(ch.tint)}>{ch.icon}</span>
-              {ch.label}
+              {t(ch.label)}
             </a>
           ))}
 
           {canUseNativeShare && (
             <button onClick={handleNativeShare} style={tile}>
               <span aria-hidden="true" style={tileIcon(C.blue)}>➕</span>
-              More apps
+              {t('More apps')}
             </button>
           )}
         </div>
@@ -218,13 +225,12 @@ function ShareSheet({ project, onClose }) {
               flexShrink: 0, color: copied ? '#fff' : C.blue
             }}
           >
-            {copied ? '✓ Copied' : 'Copy link'}
+            {copied ? `✓ ${t('Copied')}` : t('Copy link')}
           </button>
         </div>
 
         <p style={{ margin: '12px 0 0', color: C.textFaint, fontSize: 12, lineHeight: 1.5 }}>
-          The link opens this community's public page. The forum, chat and documents inside stay private
-          to verified residents.
+          {t("The link opens this community's public page. The forum, chat and documents inside stay private to verified residents.")}
         </p>
       </div>
     </div>
@@ -235,7 +241,8 @@ function ShareSheet({ project, onClose }) {
 //   'hero' — translucent pill for use on the blue gradient headers
 //   'icon' — 36px circle for dense card layouts
 //   anything else is passed through to theme's button()
-export default function ShareButton({ project, variant = 'outline', label = 'Share', style }) {
+export default function ShareButton({ project, variant = 'outline', label, style }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
 
   // Discover renders these inside a card that opens the community on click, so a
@@ -269,10 +276,10 @@ export default function ShareButton({ project, variant = 'outline', label = 'Sha
       <button
         type="button"
         onClick={openSheet}
-        aria-label={`Share ${project.name}`}
+        aria-label={t('Share {name}', { name: project.name })}
         style={{ ...(variantStyles[variant] || button(variant)), ...style }}
       >
-        {variant === 'icon' ? <span aria-hidden="true">🔗</span> : <>📣 {label}</>}
+        {variant === 'icon' ? <span aria-hidden="true">🔗</span> : <>📣 {label ?? t('Share')}</>}
       </button>
       {/* Portalled to <body>, not rendered in place. Both cards that host this
           button carry `pg-card-hover`, which applies a transform on hover, and

@@ -235,15 +235,30 @@ export const api = {
   editThread: (projectId, threadId, { title, body }) =>
     request(`/projects/${projectId}/forum/${threadId}`, { method: 'PATCH', body: { title, body } }),
 
-  // Idempotent server-side: upvoting twice is a no-op, not a second vote.
+  // Idempotent server-side: upvoting twice is a no-op, not a second vote. Both
+  // return the thread, with `upvotedByMe` saying which state it is now in.
   upvoteThread: (projectId, threadId) =>
     request(`/projects/${projectId}/forum/${threadId}/upvote`, { method: 'POST' }),
+
+  removeThreadUpvote: (projectId, threadId) =>
+    request(`/projects/${projectId}/forum/${threadId}/upvote`, { method: 'DELETE' }),
 
   voteThreadPoll: (projectId, threadId, optionId) =>
     request(`/projects/${projectId}/forum/${threadId}/poll-vote`, { method: 'POST', body: { optionId } }),
 
   deleteThread: (projectId, threadId) =>
     request(`/projects/${projectId}/forum/${threadId}`, { method: 'DELETE' }),
+
+  // The newest page of a thread's replies, oldest first — the same paging as a
+  // chat channel: pass the first reply's id as `before` for the page above it.
+  getThreadReplies: (projectId, threadId, { before, limit } = {}) =>
+    request(`/projects/${projectId}/forum/${threadId}/replies`, { query: { before, limit } }),
+
+  createThreadReply: (projectId, threadId, body) =>
+    request(`/projects/${projectId}/forum/${threadId}/replies`, { method: 'POST', body: { body } }),
+
+  deleteThreadReply: (projectId, threadId, replyId) =>
+    request(`/projects/${projectId}/forum/${threadId}/replies/${replyId}`, { method: 'DELETE' }),
 
   // ── Chat ──────────────────────────────────────────────────────────────────
   getChatChannels: (projectId) => request(`/projects/${projectId}/chat/channels`),

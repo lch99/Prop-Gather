@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import request from 'supertest'
-import { freshApp, authed, login, RESIDENT, verifiedResident } from './helpers.js'
+import { freshApp, authed, login, RESIDENT, ADMIN, verifiedResident } from './helpers.js'
 
 let app
 let residentToken
@@ -32,6 +32,21 @@ describe('GET /api/projects/:projectId/forum', () => {
     expect(res.body.map(t => t.id)).toEqual(['f1-2', 'f1-1']) // f1-2 is pinned
   })
 
+  it('counts replies from real reply rows and marks whose post is whose', async () => {
+    const res = await authed(app, residentToken).get('/api/projects/p1/forum')
+    const thread = res.body.find(t => t.id === 'f1-1')
+    expect(thread.replies).toBe(1) // one seeded reply
+    expect(thread.mine).toBe(false) // written by Tan W., not the resident
+    expect(thread.upvotedByMe).toBe(false)
+  })
+
+  it("doesn't mark a same-named neighbour's post as mine", async () => {
+    const created = await authed(app, residentToken).post('/api/projects/p1/forum').send({ category: 'General Discussion', title: 'Mine', body: 'Text' })
+    const other = await verifiedResident(app, 'p1')
+    const res = await authed(app, other.token).get('/api/projects/p1/forum')
+    expect(res.body.find(t => t.id === created.body.id).mine).toBe(false)
+  })
+
   it('lets an admin read any project forum without membership', async () => {
     const adminToken = await login(app, 'admin@propgather.com', 'admin123')
     const res = await authed(app, adminToken).get('/api/projects/p2/forum')
@@ -46,7 +61,7 @@ describe('POST /api/projects/:projectId/forum', () => {
     })
     expect(res.status).toBe(201)
     expect(res.body).toMatchObject({
-      category: 'General Discussion', title: 'Hello', body: 'First post', upvotes: 0, replies: 0, pinned: false
+      category: 'General Discussion', title: 'Hello', body: 'First post', upvotes: 0, upvotedByMe: false, replies: 0, pinned: false, mine: true
     })
     expect(res.body.author).toMatchObject({ name: 'Alex Lim', unit: 'B-21-03', tier: 'Owner', verified: true })
   })
@@ -58,10 +73,33 @@ describe('POST /api/projects/:projectId/forum', () => {
     })
     expect(res.status).toBe(201)
     expect(res.body.poll.question).toBe('Repaint the lobby?')
+    expect(res.body.poll.votedByMe).toBe(false)
+    // Counts are withheld until the viewer votes.
     expect(res.body.poll.options).toEqual([
-      { id: expect.any(String), label: 'Yes', votes: 0 },
-      { id: expect.any(String), label: 'No', votes: 0 }
+      { id: expect.any(String), label: 'Yes', votes: null },
+      { id: expect.any(String), label: 'No', votes: null }
     ])
+  })
+
+  it('rejects a poll question longer than its column', async () => {
+    const res = await authed(app, residentToken).post('/api/projects/p1/forum').send({
+      category: 'General Discussion', title: 'Hi', body: 'Text', poll: { question: 'Q'.repeat(301), options: ['A', 'B'] }
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects a poll option longer than its column', async () => {
+    const res = await authed(app, residentToken).post('/api/projects/p1/forum').send({
+      category: 'General Discussion', title: 'Hi', body: 'Text', poll: { question: 'Q?', options: ['A'.repeat(201), 'B'] }
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects an IC number inside a poll', async () => {
+    const res = await authed(app, residentToken).post('/api/projects/p1/forum').send({
+      category: 'General Discussion', title: 'Hi', body: 'Text', poll: { question: 'Whose IC is 900101-14-5678?', options: ['A', 'B'] }
+    })
+    expect(res.status).toBe(400)
   })
 
   it('rejects a thread from a non-member', async () => {
@@ -100,6 +138,7 @@ describe('POST /api/projects/:projectId/forum/:threadId/upvote', () => {
     const res = await authed(app, residentToken).post(`/api/projects/p1/forum/${thread.id}/upvote`)
     expect(res.status).toBe(200)
     expect(res.body.upvotes).toBe(thread.upvotes + 1)
+    expect(res.body.upvotedByMe).toBe(true)
   })
 
   it('is idempotent for the same user', async () => {
@@ -144,7 +183,33 @@ describe('POST /api/projects/:projectId/forum/:threadId/poll-vote', () => {
     const optionId = thread.poll.options[0].id
     const res = await authed(app, residentToken).post(`/api/projects/p1/forum/${thread.id}/poll-vote`).send({ optionId })
     expect(res.status).toBe(200)
+    expect(res.body.poll.votedByMe).toBe(optionId)
     expect(res.body.poll.options.find(o => o.id === optionId).votes).toBe(1)
+  })
+
+  it('remembers the vote when the forum is re-read', async () => {
+    const thread = await createPollThread()
+    const optionId = thread.poll.options[1].id
+    await authed(app, residentToken).post(`/api/projects/p1/forum/${thread.id}/poll-vote`).send({ optionId })
+    const list = await authed(app, residentToken).get('/api/projects/p1/forum')
+    const poll = list.body.find(t => t.id === thread.id).poll
+    expect(poll.votedByMe).toBe(optionId)
+    expect(poll.options.map(o => o.votes)).toEqual([0, 1])
+  })
+
+  it('hides counts from a member who has not voted, but not from an admin', async () => {
+    const thread = await createPollThread()
+    await authed(app, residentToken).post(`/api/projects/p1/forum/${thread.id}/poll-vote`).send({ optionId: thread.poll.options[0].id })
+
+    const other = await verifiedResident(app, 'p1')
+    const asOther = await authed(app, other.token).get('/api/projects/p1/forum')
+    const otherPoll = asOther.body.find(t => t.id === thread.id).poll
+    expect(otherPoll.votedByMe).toBe(false)
+    expect(otherPoll.options.every(o => o.votes === null)).toBe(true)
+
+    const adminToken = await login(app, ADMIN.email, ADMIN.password)
+    const asAdmin = await authed(app, adminToken).get('/api/projects/p1/forum')
+    expect(asAdmin.body.find(t => t.id === thread.id).poll.options.map(o => o.votes)).toEqual([1, 0])
   })
 
   it('ignores a second vote from the same user (first choice sticks)', async () => {
@@ -276,5 +341,134 @@ describe('paging through the forum', () => {
   it('400s for a cursor that is not a post in this community', async () => {
     const res = await list('?before=thr_does_not_exist')
     expect(res.status).toBe(400)
+  })
+})
+
+describe('DELETE /api/projects/:projectId/forum/:threadId/upvote', () => {
+  it('takes the upvote back', async () => {
+    await authed(app, residentToken).post('/api/projects/p1/forum/f1-1/upvote')
+    const res = await authed(app, residentToken).delete('/api/projects/p1/forum/f1-1/upvote')
+    expect(res.status).toBe(200)
+    expect(res.body.upvotes).toBe(24) // back to the seeded count
+    expect(res.body.upvotedByMe).toBe(false)
+  })
+
+  it("is a no-op when there's no upvote to remove", async () => {
+    const res = await authed(app, residentToken).delete('/api/projects/p1/forum/f1-1/upvote')
+    expect(res.status).toBe(200)
+    expect(res.body.upvotes).toBe(24)
+  })
+
+  it('404s for an unknown thread', async () => {
+    const res = await authed(app, residentToken).delete('/api/projects/p1/forum/thr_nope/upvote')
+    expect(res.status).toBe(404)
+  })
+
+  it('rejects a non-member', async () => {
+    const res = await authed(app, residentToken).delete('/api/projects/p2/forum/f2-1/upvote')
+    expect(res.status).toBe(403)
+  })
+
+  it('rejects an unauthenticated request', async () => {
+    const res = await request(app).delete('/api/projects/p1/forum/f1-1/upvote')
+    expect(res.status).toBe(401)
+  })
+})
+
+describe('replies: /api/projects/:projectId/forum/:threadId/replies', () => {
+  const url = (threadId = 'f1-1') => `/api/projects/p1/forum/${threadId}/replies`
+
+  it('lists a thread\'s replies with author info', async () => {
+    const res = await authed(app, residentToken).get(url())
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveLength(1)
+    expect(res.body[0]).toMatchObject({ id: 'r1-1-1', mine: false, author: { name: 'Tan W.', verified: true } })
+  })
+
+  it('posts a reply as the current member and counts it on the thread', async () => {
+    const res = await authed(app, residentToken).post(url()).send({ body: 'Same on the 21st floor.' })
+    expect(res.status).toBe(201)
+    expect(res.body).toMatchObject({ body: 'Same on the 21st floor.', mine: true, author: { name: 'Alex Lim', unit: 'B-21-03' } })
+
+    const list = await authed(app, residentToken).get(url())
+    expect(list.body.map(r => r.body)).toEqual([expect.any(String), 'Same on the 21st floor.'])
+    const forum = await authed(app, residentToken).get('/api/projects/p1/forum')
+    expect(forum.body.find(t => t.id === 'f1-1').replies).toBe(2)
+  })
+
+  it('pages back with ?before=', async () => {
+    for (const body of ['one', 'two', 'three']) await authed(app, residentToken).post(url('f1-2')).send({ body })
+    const newest = await authed(app, residentToken).get(`${url('f1-2')}?limit=2`)
+    expect(newest.body.map(r => r.body)).toEqual(['two', 'three'])
+    const earlier = await authed(app, residentToken).get(`${url('f1-2')}?limit=2&before=${newest.body[0].id}`)
+    expect(earlier.body.map(r => r.body)).toEqual(['one'])
+  })
+
+  it('400s for a cursor from another thread', async () => {
+    const res = await authed(app, residentToken).get(`${url('f1-2')}?before=r1-1-1`)
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects an empty reply', async () => {
+    const res = await authed(app, residentToken).post(url()).send({ body: '   ' })
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects a reply over 2,000 characters', async () => {
+    const res = await authed(app, residentToken).post(url()).send({ body: 'x'.repeat(2001) })
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects an IC number in a reply', async () => {
+    const res = await authed(app, residentToken).post(url()).send({ body: 'My IC is 900101-14-5678' })
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects an unauthenticated request', async () => {
+    const res = await request(app).get(url())
+    expect(res.status).toBe(401)
+  })
+
+  it('rejects a non-member', async () => {
+    const res = await authed(app, residentToken).post('/api/projects/p2/forum/f2-1/replies').send({ body: 'hi' })
+    expect(res.status).toBe(403)
+  })
+
+  it('404s for a thread in a different community', async () => {
+    const res = await authed(app, residentToken).get('/api/projects/p1/forum/f2-1/replies')
+    expect(res.status).toBe(404)
+  })
+
+  it('lets the author delete their reply', async () => {
+    const created = await authed(app, residentToken).post(url()).send({ body: 'Delete me' })
+    const res = await authed(app, residentToken).delete(`${url()}/${created.body.id}`)
+    expect(res.status).toBe(200)
+    const list = await authed(app, residentToken).get(url())
+    expect(list.body.some(r => r.id === created.body.id)).toBe(false)
+  })
+
+  it("rejects deleting someone else's reply", async () => {
+    const res = await authed(app, residentToken).delete(`${url()}/r1-1-1`)
+    expect(res.status).toBe(403)
+  })
+
+  it('lets an admin delete any reply, and audits it', async () => {
+    const adminToken = await login(app, ADMIN.email, ADMIN.password)
+    const res = await authed(app, adminToken).delete(`${url()}/r1-1-1`)
+    expect(res.status).toBe(200)
+    const audit = await authed(app, adminToken).get('/api/audit-log')
+    expect(audit.body.some(e => e.action === 'forum.reply_deleted' && e.targetId === 'r1-1-1')).toBe(true)
+  })
+
+  it('404s for an unknown reply', async () => {
+    const res = await authed(app, residentToken).delete(`${url()}/rep_nope`)
+    expect(res.status).toBe(404)
+  })
+
+  it('removes a thread\'s replies along with the thread', async () => {
+    const created = await authed(app, residentToken).post('/api/projects/p1/forum').send({ category: 'General Discussion', title: 'T', body: 'B' })
+    await authed(app, residentToken).post(url(created.body.id)).send({ body: 'a reply' })
+    const res = await authed(app, residentToken).delete(`/api/projects/p1/forum/${created.body.id}`)
+    expect(res.status).toBe(200)
   })
 })

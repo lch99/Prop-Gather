@@ -97,6 +97,22 @@ Two rules the wiring depends on:
   "SEO" and 2.8a in `DEPLOYMENT.md`. Because tags are set client-side, only
   Google (which runs JS) sees per-page values; social crawlers read the static
   ones in `index.html`.
+- **Languages (EN / BM / 中文)**: every resident-facing string goes through
+  `t()` from `useT()` / `useI18n()` in `src/i18n.jsx` — the English text *is*
+  the key, `{placeholders}` fill values or JSX (`t('See our {link}.', { link:
+  <Link…/> })`), and module-level constants are wrapped in `msg()` and
+  translated at render. Add the BM and Chinese for any new string to
+  `src/locales/ms.js` / `zh.js` and run `npm run check:i18n` (fails on a missing
+  string or a mismatched placeholder). Values the server stores or filters on
+  (forum categories, tiers, property types, statuses) stay English and are only
+  translated for display. Backend error messages are English and translated in
+  `apiClient.js` by exact match, so a fixed message worth translating goes in the
+  locale files too. Chinese prose in JSX must stay on one source line — a line
+  break becomes a space. Admin pages are staff-only and deliberately English.
+- **Loading states**: use `LoadingScreen` / `LoadingInline` from
+  `src/components/Loading.jsx` rather than a bare "Loading…" line; list pages
+  that have a skeleton (Discover) keep it. `index.html` has a static boot splash
+  for before the JS arrives.
 - **Sharing**: `ShareButton` (`src/components/Share.jsx`) is the only share UI —
   it owns the message wording, the channel list (WhatsApp first: this is
   Malaysia), and the `/s/:id` short link, and it reports every share and arrival

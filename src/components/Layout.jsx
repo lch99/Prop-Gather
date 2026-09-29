@@ -1,12 +1,14 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { C } from '../theme'
 import { useAuth, initials, hasResidentSpace } from '../auth'
+import { msg, useT } from '../i18n'
+import LanguageSwitcher, { LanguageLinks } from './LanguageSwitcher'
 
 const navItems = [
-  { to: '/discover', label: 'Discover', short: 'Discover' },
-  { to: '/my-communities', label: 'My Communities', short: 'My Comms', auth: true, show: hasResidentSpace },
-  { to: '/register', label: 'Join / Verify', short: 'Join', },
-  { to: '/admin', label: 'Admin', short: 'Admin', auth: true, role: 'admin' }
+  { to: '/discover', label: msg('Discover'), short: msg('Discover') },
+  { to: '/my-communities', label: msg('My Communities'), short: msg('My Comms'), auth: true, show: hasResidentSpace },
+  { to: '/register', label: msg('Join / Verify'), short: msg('Join'), },
+  { to: '/admin', label: msg('Admin'), short: msg('Admin'), auth: true, role: 'admin' }
 ]
 
 const visibleNav = (user) => navItems.filter(item =>
@@ -31,6 +33,7 @@ export default function Layout({ children }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useAuth()
+  const t = useT()
 
   const handleLogout = () => {
     logout()
@@ -51,22 +54,29 @@ export default function Layout({ children }) {
           maxWidth: 1200, margin: '0 auto', padding: 'clamp(10px,2.5vw,14px) clamp(14px,3vw,24px)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12
         }}>
-          <Link to="/" className="pg-header-logo" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{
-              width: 38, height: 38, borderRadius: 12, background: '#fff',
-              border: '1px solid rgba(255,255,255,0.45)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4,
-              boxShadow: '0 2px 10px rgba(0,0,0,0.10)'
-            }}>
-              <img src={`${import.meta.env.BASE_URL}brand/propgather-icon.png`} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-            </div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 19, lineHeight: 1.1, color: '#fff', letterSpacing: '-0.01em' }}>
-                PropGather<span style={{ color: C.brandLight }}>.com.my</span>
+          {/* The language picker is rendered twice and one copy hidden per
+              breakpoint (index.css): on a phone it shares the logo's row, the
+              only one with room for it, and on a wider screen it sits with the
+              account buttons. */}
+          <div className="pg-header-brand" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <Link to="/" className="pg-header-logo" style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+              <div style={{
+                width: 38, height: 38, borderRadius: 12, background: '#fff', flexShrink: 0,
+                border: '1px solid rgba(255,255,255,0.45)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4,
+                boxShadow: '0 2px 10px rgba(0,0,0,0.10)'
+              }}>
+                <img src={`${import.meta.env.BASE_URL}brand/propgather-icon.png`} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
               </div>
-              <div style={{ fontSize: 12.5, color: C.brandLight, lineHeight: 1.2 }}>Malaysia's Verified Property Community</div>
-            </div>
-          </Link>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 19, lineHeight: 1.1, color: '#fff', letterSpacing: '-0.01em' }}>
+                  PropGather<span style={{ color: C.brandLight }}>.com.my</span>
+                </div>
+                <div style={{ fontSize: 12.5, color: C.brandLight, lineHeight: 1.2 }}>{t("Malaysia's Verified Property Community")}</div>
+              </div>
+            </Link>
+            <LanguageSwitcher className="pg-lang-mobile" />
+          </div>
           <nav className="pg-header-nav" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', background: 'rgba(255,255,255,0.10)', borderRadius: 12, padding: 4 }}>
             {visibleNav(user).map(item => {
               const active = location.pathname === item.to ||
@@ -86,45 +96,50 @@ export default function Layout({ children }) {
                     boxShadow: active ? '0 2px 8px rgba(0,0,0,0.12)' : 'none'
                   }}
                 >
-                  <span className="pg-nav-full">{item.label}</span>
-                <span className="pg-nav-short">{item.short}</span>
+                  <span className="pg-nav-full">{t(item.label)}</span>
+                <span className="pg-nav-short">{t(item.short)}</span>
                 </Link>
               )
             })}
           </nav>
-          {user ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: '#fff', fontWeight: 500 }}>
-                <div style={{
-                  width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.18)',
-                  border: '1px solid rgba(255,255,255,0.35)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12
-                }}>{initials(user.name)}</div>
-                <span className="pg-header-username">{user.name}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <LanguageSwitcher className="pg-lang-desktop" />
+            {user ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: '#fff', fontWeight: 500 }}>
+                  <div style={{
+                    width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.18)',
+                    border: '1px solid rgba(255,255,255,0.35)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12
+                  }}>{initials(user.name)}</div>
+                  <span className="pg-header-username">{user.name}</span>
+                </div>
+                <button onClick={handleLogout} style={headerBtn}>{t('Log out')}</button>
               </div>
-              <button onClick={handleLogout} style={headerBtn}>Log out</button>
-            </div>
-          ) : (
-            <Link to="/login" style={headerBtn}>Log in</Link>
-          )}
+            ) : (
+              <Link to="/login" style={headerBtn}>{t('Log in')}</Link>
+            )}
+          </div>
         </div>
       </header>
       <main style={{ flex: 1, background: C.bg }}>
         {children}
       </main>
-      <footer style={{ textAlign: 'center', padding: '20px 0', color: C.textFaint, fontSize: 12 }}>
+      <footer style={{ textAlign: 'center', padding: '20px 16px', color: C.textFaint, fontSize: 12, lineHeight: 1.9 }}>
         © {new Date().getFullYear()} PropGather.com.my
         {' · '}
-        <Link to="/contact" style={{ color: C.textFaint, textDecoration: 'underline' }}>Contact Us</Link>
+        <Link to="/contact" style={{ color: C.textFaint, textDecoration: 'underline' }}>{t('Contact Us')}</Link>
         {' · '}
-        <Link to="/privacy" style={{ color: C.textFaint, textDecoration: 'underline' }}>Privacy Policy</Link>
+        <Link to="/privacy" style={{ color: C.textFaint, textDecoration: 'underline' }}>{t('Privacy Policy')}</Link>
+        <br />
+        <LanguageLinks />
       </footer>
 
       {location.pathname !== '/contact' && (
         <Link
           to="/contact"
           className="pg-fab"
-          aria-label="Contact us — we're here to help"
+          aria-label={t("Contact us — we're here to help")}
           style={{
             position: 'fixed',
             right: 22,
@@ -143,7 +158,7 @@ export default function Layout({ children }) {
           }}
         >
           <span style={{ fontSize: 19, lineHeight: 1 }} aria-hidden="true">💬</span>
-          <span className="pg-fab-label">Contact&nbsp;Us</span>
+          <span className="pg-fab-label" style={{ whiteSpace: 'nowrap' }}>{t('Contact Us')}</span>
         </Link>
       )}
     </div>

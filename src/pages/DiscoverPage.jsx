@@ -5,6 +5,7 @@ import { C, card, badge, button, typeChipColor } from '../theme'
 import Seo from '../seo'
 import ShareButton from '../components/Share'
 import { CommunityAvatar, CommunityCover } from '../components/CommunityImage'
+import { useT } from '../i18n'
 
 const activityColor = (level) => {
   if (level === 'High') return { color: C.success, bg: C.successBg }
@@ -15,6 +16,7 @@ const activityColor = (level) => {
 const EMPTY_REQ = { contactName: '', email: '', name: '', city: '', state: '', developer: '', note: '' }
 
 function RequestModal({ onClose }) {
+  const t = useT()
   const [form, setForm] = useState(EMPTY_REQ)
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
@@ -25,17 +27,17 @@ function RequestModal({ onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.name.trim() || !form.city.trim() || !form.state.trim()) {
-      setError('Please add the community name, city and state so we can find it.')
+      setError(t('Please add the community name, city and state so we can find it.'))
       return
     }
     if (!form.contactName.trim() || !form.email.trim()) {
-      setError('Please add your name and email so we can tell you when it is ready.')
+      setError(t('Please add your name and email so we can tell you when it is ready.'))
       return
     }
     // Deliberately loose — the server does the real check. This only catches an
     // obvious typo before costing the submitter a round trip.
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) {
-      setError('That email address does not look right. Please check it.')
+      setError(t('That email address does not look right. Please check it.'))
       return
     }
     setError('')
@@ -44,7 +46,7 @@ function RequestModal({ onClose }) {
       await api.requestCommunity(form)
       setDone(true)
     } catch {
-      setError("We couldn't send your request just now. Please try again in a moment.")
+      setError(t("We couldn't send your request just now. Please try again in a moment."))
     } finally {
       setSubmitting(false)
     }
@@ -64,7 +66,7 @@ function RequestModal({ onClose }) {
     }} onClick={onClose}>
       <div style={{ ...card, width: '100%', maxWidth: 480, padding: 28, position: 'relative' }}
         onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} style={{
+        <button onClick={onClose} aria-label={t('Close')} style={{
           position: 'absolute', top: 14, right: 16, border: 'none', background: 'none',
           fontSize: 20, cursor: 'pointer', color: C.textMuted, lineHeight: 1
         }}>×</button>
@@ -72,52 +74,52 @@ function RequestModal({ onClose }) {
         {done ? (
           <div style={{ textAlign: 'center', padding: '16px 0' }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
-            <h3 style={{ margin: '0 0 8px', color: C.navy }}>Request submitted!</h3>
+            <h3 style={{ margin: '0 0 8px', color: C.navy }}>{t('Request submitted!')}</h3>
             <p style={{ margin: '0 0 20px', color: C.textMuted, fontSize: 14 }}>
-              Thanks for letting us know. We'll review your suggestion and add the community when verified.
+              {t("Thanks for letting us know. We'll review your suggestion and add the community when verified.")}
             </p>
-            <button onClick={onClose} style={button('primary')}>Done</button>
+            <button onClick={onClose} style={button('primary')}>{t('Done')}</button>
           </div>
         ) : (
           <>
-            <h3 style={{ margin: '0 0 4px', color: C.navy }}>Request a missing community</h3>
+            <h3 style={{ margin: '0 0 4px', color: C.navy }}>{t('Request a missing community')}</h3>
             <p style={{ margin: '0 0 20px', color: C.textMuted, fontSize: 13 }}>
-              Can't find your property? Tell us about it and we'll add it to the directory.
+              {t("Can't find your property? Tell us about it and we'll add it to the directory.")}
             </p>
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={labelStyle}>Community / Project Name <span style={{ color: C.danger }}>*</span></label>
-                <input style={fieldStyle} placeholder="e.g. Taman Maju Jaya" value={form.name} onChange={set('name')} />
+                <label style={labelStyle}>{t('Community / Project Name')} <span style={{ color: C.danger }}>*</span></label>
+                <input style={fieldStyle} placeholder={t('e.g. Taman Maju Jaya')} value={form.name} onChange={set('name')} />
               </div>
               <div style={{ display: 'flex', gap: 10 }}>
                 <div style={{ flex: 1 }}>
-                  <label style={labelStyle}>City <span style={{ color: C.danger }}>*</span></label>
-                  <input style={fieldStyle} placeholder="e.g. Petaling Jaya" value={form.city} onChange={set('city')} />
+                  <label style={labelStyle}>{t('City')} <span style={{ color: C.danger }}>*</span></label>
+                  <input style={fieldStyle} placeholder={t('e.g. Petaling Jaya')} value={form.city} onChange={set('city')} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={labelStyle}>State <span style={{ color: C.danger }}>*</span></label>
-                  <input style={fieldStyle} placeholder="e.g. Selangor" value={form.state} onChange={set('state')} />
+                  <label style={labelStyle}>{t('State')} <span style={{ color: C.danger }}>*</span></label>
+                  <input style={fieldStyle} placeholder={t('e.g. Selangor')} value={form.state} onChange={set('state')} />
                 </div>
               </div>
               <div>
-                <label style={labelStyle}>Developer / Management Company <span style={{ color: C.textFaint, fontWeight: 400 }}>(optional)</span></label>
-                <input style={fieldStyle} placeholder="e.g. Sunway Property" value={form.developer} onChange={set('developer')} />
+                <label style={labelStyle}>{t('Developer / Management Company')} <span style={{ color: C.textFaint, fontWeight: 400 }}>{t('(optional)')}</span></label>
+                <input style={fieldStyle} placeholder={t('e.g. Sunway Property')} value={form.developer} onChange={set('developer')} />
               </div>
               <div>
-                <label style={labelStyle}>Additional notes <span style={{ color: C.textFaint, fontWeight: 400 }}>(optional)</span></label>
+                <label style={labelStyle}>{t('Additional notes')} <span style={{ color: C.textFaint, fontWeight: 400 }}>{t('(optional)')}</span></label>
                 <textarea style={{ ...fieldStyle, resize: 'vertical', minHeight: 72 }}
-                  placeholder="Anything else that helps us find this community..."
+                  placeholder={t('Anything else that helps us find this community...')}
                   value={form.note} onChange={set('note')} />
               </div>
 
               <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
                 <div style={{ display: 'flex', gap: 10 }}>
                   <div style={{ flex: 1 }}>
-                    <label style={labelStyle}>Your name <span style={{ color: C.danger }}>*</span></label>
-                    <input style={fieldStyle} placeholder="e.g. Siti Rahman" value={form.contactName} onChange={set('contactName')} />
+                    <label style={labelStyle}>{t('Your name')} <span style={{ color: C.danger }}>*</span></label>
+                    <input style={fieldStyle} placeholder={t('e.g. Siti Rahman')} value={form.contactName} onChange={set('contactName')} />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <label style={labelStyle}>Your email <span style={{ color: C.danger }}>*</span></label>
+                    <label style={labelStyle}>{t('Your email')} <span style={{ color: C.danger }}>*</span></label>
                     <input style={fieldStyle} type="email" inputMode="email" autoComplete="email"
                       placeholder="you@email.com" value={form.email} onChange={set('email')} />
                   </div>
@@ -125,17 +127,17 @@ function RequestModal({ onClose }) {
                 {/* PDPA notice: this is the point of collection, so say what the
                     address is for and how long it is kept, right where it is typed. */}
                 <p style={{ margin: '8px 0 0', color: C.textMuted, fontSize: 12, lineHeight: 1.5 }}>
-                  We use this only to tell you when your community is added, and delete it once
-                  your request has been handled. See our{' '}
-                  <Link to="/privacy" style={{ color: C.blue }}>Privacy Policy</Link>.
+                  {t('We use this only to tell you when your community is added, and delete it once your request has been handled. See our {link}.', {
+                    link: <Link to="/privacy" style={{ color: C.blue }}>{t('Privacy Policy')}</Link>
+                  })}
                 </p>
               </div>
 
               {error && <p style={{ margin: 0, color: C.danger, fontSize: 13 }}>{error}</p>}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
-                <button type="button" onClick={onClose} style={button('outline')}>Cancel</button>
+                <button type="button" onClick={onClose} style={button('outline')}>{t('Cancel')}</button>
                 <button type="submit" disabled={submitting} style={{ ...button('primary'), opacity: submitting ? 0.7 : 1 }}>
-                  {submitting ? 'Submitting…' : 'Submit request'}
+                  {submitting ? t('Submitting…') : t('Submit request')}
                 </button>
               </div>
             </form>
@@ -147,6 +149,7 @@ function RequestModal({ onClose }) {
 }
 
 function CommunityJoinModal({ project, onClose }) {
+  const t = useT()
   const navigate = useNavigate()
   const ac = activityColor(project.activityLevel)
 
@@ -181,7 +184,7 @@ function CommunityJoinModal({ project, onClose }) {
           {project.coverUrl && (
             <CommunityCover project={project} style={{ position: 'absolute', inset: 0, height: 'auto' }} />
           )}
-          <button onClick={onClose} aria-label="Close" style={{
+          <button onClick={onClose} aria-label={t('Close')} style={{
             position: 'absolute', top: 14, right: 16, zIndex: 1, border: 'none', background: 'rgba(255,255,255,0.2)',
             borderRadius: '50%', width: 28, height: 28, fontSize: 16, cursor: 'pointer',
             color: '#fff', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center'
@@ -195,7 +198,7 @@ function CommunityJoinModal({ project, onClose }) {
             />
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.78)', marginBottom: 6, textTransform: 'uppercase' }}>
-                Community
+                {t('Community')}
               </div>
               <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800 }}>{project.name}</h2>
               <div style={{ fontSize: 13.5, color: 'rgba(255,255,255,0.85)' }}>
@@ -209,12 +212,12 @@ function CommunityJoinModal({ project, onClose }) {
         <div style={{ padding: '20px 28px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Info grid */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <InfoTile label="Property type" value={project.type} />
-            <InfoTile label="Verified residents" value={`${project.ownerCount} owners`} />
-            <InfoTile label="Activity level">
-              <span style={{ fontWeight: 700, color: ac.color }}>{project.activityLevel}</span>
+            <InfoTile label={t('Property type')} value={t(project.type)} />
+            <InfoTile label={t('Verified residents')} value={t('{n} owners', { n: project.ownerCount })} />
+            <InfoTile label={t('Activity level')}>
+              <span style={{ fontWeight: 700, color: ac.color }}>{t(project.activityLevel)}</span>
             </InfoTile>
-            {project.developer && <InfoTile label="Developer" value={project.developer} />}
+            {project.developer && <InfoTile label={t('Developer')} value={project.developer} />}
           </div>
 
           {/* Latest thread */}
@@ -222,7 +225,7 @@ function CommunityJoinModal({ project, onClose }) {
             <div style={{
               background: C.neutralBg, borderRadius: C.radiusSm, padding: '10px 14px', fontSize: 13
             }}>
-              <span style={{ color: C.textMuted, fontWeight: 600 }}>Latest discussion: </span>
+              <span style={{ color: C.textMuted, fontWeight: 600 }}>{t('Latest discussion:')} </span>
               <span style={{ color: C.text }}>{project.latestThread}</span>
             </div>
           )}
@@ -233,7 +236,8 @@ function CommunityJoinModal({ project, onClose }) {
             borderRadius: C.radiusSm, padding: '11px 14px',
             fontSize: 13, color: C.navy, lineHeight: 1.55
           }}>
-            <strong>🔐 Verified owners only.</strong> To join this community you must be a registered property owner of this residence. You will need to upload your Sale and Purchase Agreement (SPA), a recent utility bill, or a copy of the property title as proof during registration.
+            <strong>🔐 {t('Verified owners only.')}</strong>{' '}
+            {t('To join this community you must be a registered property owner of this residence. You will need to upload your Sale and Purchase Agreement (SPA), a recent utility bill, or a copy of the property title as proof during registration.')}
           </div>
 
           {/* Actions */}
@@ -242,10 +246,10 @@ function CommunityJoinModal({ project, onClose }) {
                 neighbour who does is the useful action. */}
             <ShareButton project={project} variant="outline" style={{ marginRight: 'auto' }} />
             <Link to={`/project/${project.id}`} onClick={onClose} style={{ textDecoration: 'none' }}>
-              <button style={button('outline')}>View community</button>
+              <button style={button('outline')}>{t('View community')}</button>
             </Link>
             <button style={button('primary')} onClick={handleJoin}>
-              Join now →
+              {t('Join now →')}
             </button>
           </div>
         </div>
@@ -291,6 +295,7 @@ function SkeletonCard() {
 }
 
 export default function DiscoverPage() {
+  const t = useT()
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   // The three filters live in the URL rather than in component state, so a
@@ -351,8 +356,8 @@ export default function DiscoverPage() {
           separate page with near-identical content. */}
       <Seo
         path="/discover"
-        title="Discover verified property communities in Malaysia"
-        description="Search Malaysia's directory of condominiums, apartments, and housing projects. Find your building by name, city, or state and join its verified residents-only community."
+        title={t('Discover verified property communities in Malaysia')}
+        description={t("Search Malaysia's directory of condominiums, apartments, and housing projects. Find your building by name, city, or state and join its verified residents-only community.")}
       />
       {showRequest && <RequestModal onClose={() => setShowRequest(false)} />}
       {selectedProject && <CommunityJoinModal project={selectedProject} onClose={() => setSelectedProject(null)} />}
@@ -375,21 +380,22 @@ export default function DiscoverPage() {
             borderRadius: 999, padding: '5px 13px', fontSize: 12, fontWeight: 700, color: '#fff',
             backdropFilter: 'blur(6px)'
           }}>
-            👋 Welcome to your neighbourhood
+            👋 {t('Welcome to your neighbourhood')}
           </div>
           <h1 style={{ margin: '0 0 7px', fontSize: 'clamp(20px, 4.5vw, 28px)', fontWeight: 800, letterSpacing: '-0.015em', lineHeight: 1.15 }}>
-            Discover <span className="pg-gradient-text">verified property</span> communities
+            {t('Discover {highlight} communities', {
+              highlight: <span className="pg-gradient-text">{t('verified property')}</span>
+            })}
           </h1>
           <p style={{ margin: '0 0 14px', color: C.brandLight, fontSize: 14.5, lineHeight: 1.5, maxWidth: 580 }}>
-            Search Malaysia's national directory of registered property projects. Join your project's
-            verified community to access the forum, live chat, and owner tools.
+            {t("Search Malaysia's national directory of registered property projects. Join your project's verified community to access the forum, live chat, and owner tools.")}
           </p>
           <div className="pg-hero-bottom">
             <div className="pg-stat-chips" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {[
-              [projects.length, 'Registered projects'],
-              [totalResidents.toLocaleString(), 'Verified residents'],
-              [states.length, 'States covered']
+              [projects.length, t('Registered projects')],
+              [totalResidents.toLocaleString(), t('Verified residents')],
+              [states.length, t('States covered')]
             ].map(([value, label]) => (
               <div key={label} style={{
                 background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)',
@@ -411,7 +417,7 @@ export default function DiscoverPage() {
                 backdropFilter: 'blur(6px)', flexShrink: 0
               }}
             >
-              + Can't find your community?
+              + {t("Can't find your community?")}
             </button>
           </div>
 
@@ -421,19 +427,21 @@ export default function DiscoverPage() {
             padding: '12px 14px', boxShadow: '0 4px 24px rgba(0,0,0,0.18)'
           }}>
             <input
-              placeholder="Search by project name, city, or state..."
+              placeholder={t('Search by project name, city, or state...')}
+              aria-label={t('Search by project name, city, or state...')}
               value={search}
               onChange={setFilter('q')}
               style={inputStyle}
             />
             <div className="pg-discover-search-filters">
-              <select value={state} onChange={setFilter('state')} style={selectStyle}>
-                <option value="">All states</option>
+              <select value={state} onChange={setFilter('state')} style={selectStyle} aria-label={t('State')}>
+                <option value="">{t('All states')}</option>
                 {states.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
-              <select value={type} onChange={setFilter('type')} style={selectStyle}>
-                <option value="">All types</option>
-                {types.map(t => <option key={t} value={t}>{t}</option>)}
+              {/* The value stays the English type the server filters on; only the label is translated. */}
+              <select value={type} onChange={setFilter('type')} style={selectStyle} aria-label={t('Property type')}>
+                <option value="">{t('All types')}</option>
+                {types.map(ty => <option key={ty} value={ty}>{t(ty)}</option>)}
               </select>
             </div>
             {(search || state || type) && (
@@ -441,7 +449,7 @@ export default function DiscoverPage() {
                 onClick={() => setSearchParams({}, { replace: true })}
                 style={{ border: 'none', background: 'none', color: C.blue, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
               >
-                × Clear filters
+                × {t('Clear filters')}
               </button>
             )}
           </div>
@@ -460,31 +468,30 @@ export default function DiscoverPage() {
                 filters set and nothing to clear — so tell the two apart. */}
             {projects.length === 0 ? (
               <>
-                <h3 style={{ margin: '0 0 6px', color: C.navy }}>No communities listed yet</h3>
+                <h3 style={{ margin: '0 0 6px', color: C.navy }}>{t('No communities listed yet')}</h3>
                 <p style={{ margin: '0 0 16px', color: C.textMuted, fontSize: 14 }}>
-                  PropGather is just getting started in your area. Tell us where you
-                  live and we'll add it.
+                  {t("PropGather is just getting started in your area. Tell us where you live and we'll add it.")}
                 </p>
               </>
             ) : (
               <>
-                <h3 style={{ margin: '0 0 6px', color: C.navy }}>No projects match your search</h3>
+                <h3 style={{ margin: '0 0 6px', color: C.navy }}>{t('No projects match your search')}</h3>
                 <p style={{ margin: '0 0 16px', color: C.textMuted, fontSize: 14 }}>
-                  Try a different name, city, or clear your filters.
+                  {t('Try a different name, city, or clear your filters.')}
                 </p>
                 <p style={{ margin: '0 0 12px', color: C.textMuted, fontSize: 14 }}>
-                  Still can't find your community?
+                  {t("Still can't find your community?")}
                 </p>
               </>
             )}
             <button onClick={() => setShowRequest(true)} style={button('primary')}>
-              + Request to add it
+              + {t('Request to add it')}
             </button>
           </div>
         ) : (
           <>
             <div style={{ color: C.textMuted, fontSize: 14, marginBottom: 12 }}>
-              {filtered.length} project{filtered.length !== 1 ? 's' : ''} found
+              {t(filtered.length === 1 ? '{n} project found' : '{n} projects found', { n: filtered.length })}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
               {filtered.map((p, i) => {
@@ -513,7 +520,7 @@ export default function DiscoverPage() {
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                             <h3 style={{ margin: 0, color: C.navy, fontSize: 17, lineHeight: 1.25 }}>{p.name}</h3>
-                            <span style={badge(ctext, cbg)}>{p.type}</span>
+                            <span style={badge(ctext, cbg)}>{t(p.type)}</span>
                           </div>
                           <div style={{ color: C.textMuted, fontSize: 13, marginTop: 4 }}>
                             {p.address}, {p.city}, {p.state}
@@ -521,15 +528,15 @@ export default function DiscoverPage() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 8, margin: '14px 0 0', flexWrap: 'wrap' }}>
-                        <span style={badge(C.navy, C.neutralBg)}>👥 {p.ownerCount} verified residents</span>
-                        <span style={badge(ac.color, ac.bg)}>{p.activityLevel} activity</span>
-                        {p.activeOfferBanner && <span style={badge(C.warning, C.warningBg)}>🏷 Vendor offer this week</span>}
+                        <span style={badge(C.navy, C.neutralBg)}>👥 {t('{n} verified residents', { n: p.ownerCount })}</span>
+                        <span style={badge(ac.color, ac.bg)}>{t(`${p.activityLevel} activity`)}</span>
+                        {p.activeOfferBanner && <span style={badge(C.warning, C.warningBg)}>🏷 {t('Vendor offer this week')}</span>}
                       </div>
                       <div style={{ fontSize: 13, color: C.text, marginTop: 14 }}>
                         {/* a just-added community has no threads yet */}
                         {p.latestThread
-                          ? <><span style={{ color: C.textMuted }}>Latest: </span>{p.latestThread}</>
-                          : <span style={{ color: C.textFaint, fontStyle: 'italic' }}>New community — no posts yet.</span>}
+                          ? <><span style={{ color: C.textMuted }}>{t('Latest:')} </span>{p.latestThread}</>
+                          : <span style={{ color: C.textFaint, fontStyle: 'italic' }}>{t('New community — no posts yet.')}</span>}
                       </div>
                       <div style={{ flexGrow: 1 }} />
                       {/* clear, full-width action affordance so it's obvious the card opens the community */}
@@ -539,7 +546,7 @@ export default function DiscoverPage() {
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                         color: C.blue, fontWeight: 700, fontSize: 14
                       }}>
-                        View community &amp; join
+                        {t('View community & join')}
                         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           {/* ShareButton swallows the click, so this never opens
                               the community by accident. */}

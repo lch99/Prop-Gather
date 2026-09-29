@@ -1,8 +1,10 @@
 import { C, button } from '../theme'
+import { useT } from '../i18n'
 
 // Renders a poll with hidden results until the viewer votes (anti-bandwagon).
 // Shared by the Polls tab and forum-thread polls. `onVote(optionId)` casts a vote.
 export default function PollView({ poll, onVote, compact = false }) {
+  const t = useT()
   const total = poll.options.reduce((s, o) => s + o.votes, 0)
   return (
     <div>
@@ -10,7 +12,7 @@ export default function PollView({ poll, onVote, compact = false }) {
         <h4 style={{ margin: `0 0 ${poll.expiresAt ? 4 : 10}px`, color: C.navy, fontSize: compact ? 15 : undefined }}>{poll.question}</h4>
       )}
       {poll.expiresAt && (
-        <div style={{ fontSize: 12, color: C.textFaint, marginBottom: 12 }}>Closes {poll.expiresAt}</div>
+        <div style={{ fontSize: 12, color: C.textFaint, marginBottom: 12 }}>{t('Closes {date}', { date: poll.expiresAt })}</div>
       )}
       <div style={{ display: 'grid', gap: 8 }}>
         {poll.options.map(o => {
@@ -40,7 +42,9 @@ export default function PollView({ poll, onVote, compact = false }) {
         })}
       </div>
       {poll.votedByMe && (
-        <div style={{ marginTop: 10, fontSize: 12, color: C.textMuted }}>{total} vote{total !== 1 ? 's' : ''} total · you voted ✓</div>
+        <div style={{ marginTop: 10, fontSize: 12, color: C.textMuted }}>
+          {t(total === 1 ? '{n} vote total' : '{n} votes total', { n: total })} · {t('you voted')} ✓
+        </div>
       )}
     </div>
   )

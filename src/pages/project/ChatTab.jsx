@@ -4,21 +4,49 @@ import { C, card, button, badge, tierColor } from '../../theme'
 import { useAuth } from '../../auth'
 import { useAttachments, AttachmentPicker, AttachmentList } from '../../components/Attachments'
 import SensitiveContentNotice, { hasSensitiveContent } from '../../components/SensitiveContentNotice'
+import { msg, useI18n } from '../../i18n'
+import { LoadingInline } from '../../components/Loading'
 
-const channelIcons = {
-  general: '# general',
-  defects: '# defects',
-  announcements: '# announcements',
-  facilities: '# facilities',
-  renovation: '# renovation'
+// Channel ids are the server's and stay English in the URL; this is how each
+// one is labelled on screen.
+const channelLabels = {
+  general: msg('general'),
+  defects: msg('defects'),
+  announcements: msg('announcements'),
+  facilities: msg('facilities'),
+  renovation: msg('renovation')
 }
+
+const channelLabel = (ch, t) => `# ${channelLabels[ch] ? t(channelLabels[ch]) : ch}`
 
 // The most recent messages only — a channel's whole history used to load every
 // time it was opened. Older ones load when the resident asks for them.
 const PAGE_SIZE = 50
 
+// In the resident's own timezone — the server sends the raw timestamp because
+// it formatted in its own (UTC), eight hours off. Today's messages show just the
+// time; older ones carry the date too, or "14:32" is ambiguous.
+function messageTime(createdAt, locale) {
+  const d = new Date(createdAt)
+  if (Number.isNaN(d.getTime())) return ''
+  const time = d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false })
+  const now = new Date()
+  if (d.toDateString() === now.toDateString()) return time
+  const date = d.toLocaleDateString(locale, {
+    day: 'numeric', month: 'short', ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {})
+  })
+  return `${date}, ${time}`
+}
+
+// Enter sends, except while an input method is composing: typing Chinese (or
+// any IME script) uses Enter to confirm the characters, and Safari reports that
+// keypress as a plain Enter.
+const isSubmitEnter = (e) => e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229
+
 export default function ChatTab({ projectId }) {
   const { user } = useAuth()
+  const { t, locale, formatDate } = useI18n()
+  const isAdmin = user?.role === 'admin'
   const [channels, setChannels] = useState([])
   const [active, setActive] = useState('general')
   const [messages, setMessages] = useState([])
@@ -107,9 +135,9 @@ export default function ChatTab({ projectId }) {
 
   // One correction per message — enough for the typo you notice immediately,
   // not enough to rewrite what someone already replied to.
-  const startEdit = (msg) => {
-    setEditingId(msg.id)
-    setEditDraft(msg.text)
+  const startEdit = (message) => {
+    setEditingId(message.id)
+    setEditDraft(message.text)
     setEditError('')
   }
 
@@ -137,15 +165,15 @@ export default function ChatTab({ projectId }) {
     // The server requires message text even when files are attached, so say that
     // rather than letting the request come back as a bare 400.
     if (!text.trim()) {
-      setSendError('Please add a short message to go with your file.')
+      setSendError(t('Please add a short message to go with your file.'))
       return
     }
     const channel = active
     setSendError('')
     setSending(true)
     try {
-      const msg = await api.sendChatMessage(projectId, channel, text.trim(), attachments)
-      if (channel === activeRef.current) setMessages(m => [...m, msg])
+      const sent = await api.sendChatMessage(projectId, channel, text.trim(), attachments)
+      if (channel === activeRef.current) setMessages(m => [...m, sent])
       setText('')
       resetAttachments()
     } catch (err) {
@@ -158,13 +186,13 @@ export default function ChatTab({ projectId }) {
   // You can remove your own message — mirrors the forum "delete your post"
   // right (see ForumTab.jsx).
   const deleteMessage = async (messageId) => {
-    if (!window.confirm('Delete this message? This cannot be undone.')) return
+    if (!window.confirm(t('Delete this message? This cannot be undone.'))) return
     try {
       await api.deleteChatMessage(projectId, active, messageId)
-      setMessages(m => m.filter(msg => msg.id !== messageId))
+      setMessages(m => m.filter(message => message.id !== messageId))
       setSendError('')
     } catch (err) {
-      setSendError(err.message || "We couldn't delete that message just now. Please try again.")
+      setSendError(err.message || t("We couldn't delete that message just now. Please try again."))
     }
   }
 
@@ -173,7 +201,7 @@ export default function ChatTab({ projectId }) {
   return (
     <div className="pg-chat-grid" style={{ display: 'grid', gap: 20 }}>
       <div className="pg-chat-channels" style={{ ...card, padding: 12, overflowY: 'auto' }}>
-        <div style={{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>CHANNELS</div>
+        <div style={{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>{t('CHANNELS')}</div>
         {channels.map(ch => (
           <button
             key={ch}
@@ -187,18 +215,14 @@ export default function ChatTab({ projectId }) {
               marginBottom: 2
             }}
           >
-            <span>{channelIcons[ch] || `# ${ch}`}</span>
+            <span>{channelLabel(ch, t)}</span>
           </button>
         ))}
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-          <button style={{ ...button('outline'), width: '100%', fontSize: 12 }}>+ Propose channel</button>
-        </div>
       </div>
 
       <div className="pg-chat-panel" style={{ ...card, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontWeight: 700, color: C.navy }}>{channelIcons[active] || `# ${active}`}</div>
-          <span style={badge(C.success, C.successBg)}>● 12 online</span>
+          <div style={{ fontWeight: 700, color: C.navy }}>{channelLabel(active, t)}</div>
         </div>
         <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {hasEarlier && (
@@ -207,7 +231,7 @@ export default function ChatTab({ projectId }) {
               disabled={loadingEarlier}
               style={{ ...button('outline'), alignSelf: 'center', fontSize: 12, padding: '6px 12px' }}
             >
-              {loadingEarlier ? 'Loading…' : 'Load earlier messages'}
+              {loadingEarlier ? t('Loading…') : t('Load earlier messages')}
             </button>
           )}
           {loadError && (
@@ -216,39 +240,40 @@ export default function ChatTab({ projectId }) {
             </div>
           )}
           {loading && (
-            <div style={{ color: C.textMuted, textAlign: 'center', marginTop: 40 }}>Loading messages…</div>
+            <LoadingInline label={t('Loading messages…')} style={{ marginTop: 24 }} />
           )}
           {!loading && !loadError && messages.length === 0 && (
-            <div style={{ color: C.textMuted, textAlign: 'center', marginTop: 40 }}>No messages yet — be the first to say hello!</div>
+            <div style={{ color: C.textMuted, textAlign: 'center', marginTop: 40 }}>{t('No messages yet — be the first to say hello!')}</div>
           )}
           {messages.map(m => (
             <div key={m.id}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
                 <span style={{ fontWeight: 700, fontSize: 13 }}>{m.sender}</span>
                 {m.unit && m.unit !== '-' && <span style={{ fontSize: 12, color: C.textMuted }}>{m.unit}</span>}
-                <span style={{ ...badge(tierColor(m.tier), `${tierColor(m.tier)}1a`), fontSize: 11 }}>{m.tier}</span>
-                {m.verified && <span style={{ fontSize: 11, color: C.success }}>✓</span>}
-                <span style={{ fontSize: 11, color: C.textFaint, marginLeft: 'auto' }}>{m.time}</span>
-                {m.sender === user?.name && editingId !== m.id && (
-                  <>
-                    {/* One edit per message — once spent, only delete remains. */}
-                    {!m.editedAt && m.text && (
-                      <button
-                        onClick={() => startEdit(m)}
-                        title="Edit your message (once only)"
-                        style={{ border: 'none', background: 'none', color: C.blue, fontSize: 12, cursor: 'pointer', padding: 0 }}
-                      >
-                        ✏️
-                      </button>
-                    )}
-                    <button
-                      onClick={() => deleteMessage(m.id)}
-                      title="Delete your message"
-                      style={{ border: 'none', background: 'none', color: C.danger, fontSize: 12, cursor: 'pointer', padding: 0 }}
-                    >
-                      🗑️
-                    </button>
-                  </>
+                <span style={{ ...badge(tierColor(m.tier), `${tierColor(m.tier)}1a`), fontSize: 11 }}>{t(m.tier)}</span>
+                {m.verified && <span style={{ fontSize: 11, color: C.success }} title={t('Verified resident')}>✓</span>}
+                <span style={{ fontSize: 11, color: C.textFaint, marginLeft: 'auto' }} title={formatDate(m.createdAt)}>{messageTime(m.createdAt, locale)}</span>
+                {/* One edit per message, your own — once spent, only delete remains. */}
+                {m.mine && !m.editedAt && m.text && editingId !== m.id && (
+                  <button
+                    onClick={() => startEdit(m)}
+                    title={t('Edit your message (once only)')}
+                    aria-label={t('Edit your message')}
+                    style={{ border: 'none', background: 'none', color: C.blue, fontSize: 12, cursor: 'pointer', padding: 0 }}
+                  >
+                    ✏️
+                  </button>
+                )}
+                {/* Your own message, or any message for an admin moderating. */}
+                {(m.mine || isAdmin) && editingId !== m.id && (
+                  <button
+                    onClick={() => deleteMessage(m.id)}
+                    title={m.mine ? t('Delete your message') : t('Remove this message (admin)')}
+                    aria-label={m.mine ? t('Delete your message') : t('Remove this message')}
+                    style={{ border: 'none', background: 'none', color: C.danger, fontSize: 12, cursor: 'pointer', padding: 0 }}
+                  >
+                    🗑️
+                  </button>
                 )}
               </div>
               {editingId === m.id ? (
@@ -256,12 +281,12 @@ export default function ChatTab({ projectId }) {
                   <input
                     value={editDraft}
                     onChange={e => setEditDraft(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') saveEdit(m.id); if (e.key === 'Escape') cancelEdit() }}
+                    onKeyDown={e => { if (isSubmitEnter(e)) saveEdit(m.id); if (e.key === 'Escape') cancelEdit() }}
                     autoFocus
                     style={{ padding: '8px 12px', border: `1px solid ${C.blue}`, borderRadius: C.radiusSm, fontSize: 14 }}
                   />
                   <SensitiveContentNotice values={[editDraft]} />
-                  <div style={{ fontSize: 11, color: C.textFaint }}>You can edit a message once. Enter to save, Esc to cancel.</div>
+                  <div style={{ fontSize: 11, color: C.textFaint }}>{t('You can edit a message once. Enter to save, Esc to cancel.')}</div>
                   {editError && <div style={{ fontSize: 12, color: C.danger }}>{editError}</div>}
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button
@@ -269,17 +294,17 @@ export default function ChatTab({ projectId }) {
                       onClick={() => saveEdit(m.id)}
                       disabled={editBlocked}
                     >
-                      Save
+                      {t('Save')}
                     </button>
-                    <button style={{ ...button('outline'), fontSize: 12, padding: '6px 12px' }} onClick={cancelEdit}>Cancel</button>
+                    <button style={{ ...button('outline'), fontSize: 12, padding: '6px 12px' }} onClick={cancelEdit}>{t('Cancel')}</button>
                   </div>
                 </div>
               ) : m.text && (
                 <div style={{ fontSize: 14, color: C.text, background: '#f6f7f9', padding: '8px 12px', borderRadius: C.radiusSm, display: 'inline-block', maxWidth: '85%' }}>
                   {m.text}
                   {m.editedAt && (
-                    <span style={{ color: C.textFaint, fontSize: 11, marginLeft: 6 }} title={`Edited ${new Date(m.editedAt).toLocaleString('en-MY')}`}>
-                      (edited)
+                    <span style={{ color: C.textFaint, fontSize: 11, marginLeft: 6 }} title={t('Edited {date}', { date: formatDate(m.editedAt) })}>
+                      {t('(edited)')}
                     </span>
                   )}
                 </div>
@@ -307,7 +332,8 @@ export default function ChatTab({ projectId }) {
           <div style={{ display: 'flex', gap: 8 }}>
             {attachments.length === 0 && !uploadError && (
               <label
-                title="Attach a photo or file"
+                title={t('Attach a photo or file')}
+                aria-label={t('Attach a photo or file')}
                 style={{
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
                   padding: '0 12px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm,
@@ -327,8 +353,9 @@ export default function ChatTab({ projectId }) {
             <input
               value={text}
               onChange={e => setText(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && send()}
-              placeholder="Type a message..."
+              onKeyDown={e => isSubmitEnter(e) && send()}
+              placeholder={t('Type a message...')}
+              aria-label={t('Type a message...')}
               style={{ flex: 1, padding: '10px 12px', border: `1px solid ${C.border}`, borderRadius: C.radiusSm, fontSize: 14, background: '#fff' }}
             />
             <button
@@ -339,7 +366,7 @@ export default function ChatTab({ projectId }) {
               onClick={send}
               disabled={blockedByPii || sending}
             >
-              {sending ? (attachments.length ? 'Uploading…' : 'Sending…') : 'Send'}
+              {sending ? (attachments.length ? t('Uploading…') : t('Sending…')) : t('Send')}
             </button>
           </div>
           <SensitiveContentNotice values={[text]} />

@@ -1,5 +1,6 @@
 import { C } from '../theme'
-import { sensitiveContentWarning } from '../sensitiveContent'
+import { detectSensitiveContent, sensitiveContentWarning } from '../sensitiveContent'
+import { useT } from '../i18n'
 
 // Warns a resident that what they're typing contains a personal identifier
 // (NRIC, payment card) before they post it somewhere every verified member of
@@ -13,8 +14,14 @@ import { sensitiveContentWarning } from '../sensitiveContent'
 // Uses `warning` rather than `danger` colours on purpose: the resident hasn't
 // done anything wrong, they're about to make a mistake we can still catch.
 export default function SensitiveContentNotice({ values }) {
-  const message = sensitiveContentWarning(...values)
-  if (!message) return null
+  const t = useT()
+  const kinds = detectSensitiveContent(values).map(k => t(k))
+  if (!kinds.length) return null
+  // Worded here rather than taken from sensitiveContentMessage(), which is
+  // English-only: the kinds and the joining "and" are translated separately.
+  const message = t("This looks like it contains a {kinds}. For your safety, personal identifiers like these can't be shared in a community space — please remove it before posting.", {
+    kinds: kinds.length === 2 ? t('{a} and {b}', { a: kinds[0], b: kinds[1] }) : kinds[0]
+  })
 
   return (
     <div

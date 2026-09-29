@@ -10,10 +10,13 @@ import ToolsTab from './project/ToolsTab'
 import ReferencesTab from './project/ReferencesTab'
 import ShareButton from '../components/Share'
 import { CommunityAvatar, CommunityCover, HERO_SCRIM } from '../components/CommunityImage'
+import { msg, useT } from '../i18n'
+import LoadingScreen from '../components/Loading'
 
-const comingSoonTabs = ['Subscription*', 'Vendors']
+const comingSoonTabs = [msg('Subscription*'), msg('Vendors')]
 
 function ComingSoonModal({ tab, onClose }) {
+  const t = useT()
   return (
     <div
       onClick={onClose}
@@ -30,9 +33,9 @@ function ComingSoonModal({ tab, onClose }) {
         }}
       >
         <div style={{ fontSize: 40, marginBottom: 12 }}>🚧</div>
-        <h2 style={{ margin: '0 0 8px', color: C.navy, fontSize: 22 }}>{tab}</h2>
+        <h2 style={{ margin: '0 0 8px', color: C.navy, fontSize: 22 }}>{t(tab)}</h2>
         <p style={{ color: C.textMuted, margin: '0 0 24px', fontSize: 15 }}>
-          This feature is coming soon. Stay tuned for updates!
+          {t('This feature is coming soon. Stay tuned for updates!')}
         </p>
         <button
           onClick={onClose}
@@ -41,7 +44,7 @@ function ComingSoonModal({ tab, onClose }) {
             padding: '10px 32px', fontWeight: 600, fontSize: 14, cursor: 'pointer'
           }}
         >
-          Got it
+          {t('Got it')}
         </button>
       </div>
     </div>
@@ -49,6 +52,7 @@ function ComingSoonModal({ tab, onClose }) {
 }
 
 function LockedGate({ project, isLoggedIn }) {
+  const t = useT()
   const projectId = project.id
   return (
     <div style={{
@@ -58,34 +62,33 @@ function LockedGate({ project, isLoggedIn }) {
     }}>
       <div style={{ fontSize: 52, marginBottom: 16 }}>🔐</div>
       <h2 style={{ margin: '0 0 10px', color: C.navy, fontSize: 22, fontWeight: 800 }}>
-        Verified residents only
+        {t('Verified residents only')}
       </h2>
       <p style={{ margin: '0 0 10px', color: C.textMuted, fontSize: 15, lineHeight: 1.65 }}>
-        The community forum and chat for <strong style={{ color: C.navy }}>{project.name}</strong> are
-        only accessible to verified property owners and residents of this building.
+        {t('The community forum and chat for {name} are only accessible to verified property owners and residents of this building.', {
+          name: <strong style={{ color: C.navy }}>{project.name}</strong>
+        })}
       </p>
       <p style={{ margin: '0 0 28px', color: C.textMuted, fontSize: 14, lineHeight: 1.55 }}>
-        To gain access, register and upload your Sale and Purchase Agreement (SPA), a recent utility bill, or a
-        copy of the property title as proof of ownership.
-        Admin review takes less than 24 hours.
+        {t('To gain access, register and upload your Sale and Purchase Agreement (SPA), a recent utility bill, or a copy of the property title as proof of ownership. Admin review takes less than 24 hours.')}
       </p>
       <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
         {isLoggedIn ? (
           <Link to={`/register?projectId=${projectId}`} style={{ textDecoration: 'none' }}>
             <button style={{ ...button('primary'), fontSize: 15, padding: '12px 28px' }}>
-              Verify my ownership →
+              {t('Verify my ownership →')}
             </button>
           </Link>
         ) : (
           <Link to={`/login?next=${encodeURIComponent(`/project/${projectId}`)}`} style={{ textDecoration: 'none' }}>
             <button style={{ ...button('primary'), fontSize: 15, padding: '12px 28px' }}>
-              Log in to verify
+              {t('Log in to verify')}
             </button>
           </Link>
         )}
         <Link to="/discover" style={{ textDecoration: 'none' }}>
           <button style={{ ...button('outline'), fontSize: 15, padding: '12px 28px' }}>
-            Back to discover
+            {t('Back to discover')}
           </button>
         </Link>
       </div>
@@ -95,9 +98,9 @@ function LockedGate({ project, isLoggedIn }) {
           most useful thing they can do from this screen. */}
       <div style={{ marginTop: 22, paddingTop: 18, borderTop: `1px solid ${C.border}` }}>
         <p style={{ margin: '0 0 12px', color: C.textMuted, fontSize: 14 }}>
-          Know someone who lives here? Send them this community.
+          {t('Know someone who lives here? Send them this community.')}
         </p>
-        <ShareButton project={project} variant="secondary" label={`Share ${project.name}`} style={{ fontSize: 14, padding: '10px 20px' }} />
+        <ShareButton project={project} variant="secondary" label={t('Share {name}', { name: project.name })} style={{ fontSize: 14, padding: '10px 20px' }} />
       </div>
     </div>
   )
@@ -106,6 +109,7 @@ function LockedGate({ project, isLoggedIn }) {
 export default function ProjectPage() {
   const { id } = useParams()
   const { user, refresh } = useAuth()
+  const t = useT()
   const [project, setProject] = useState(null)
   const [popupTab, setPopupTab] = useState(null)
   // The community whose membership has been re-checked with the server.
@@ -150,11 +154,11 @@ export default function ProjectPage() {
   }, [id, needsRecheck, recheckedId, refresh])
 
   if (project === false) return <Navigate to="/discover" replace />
-  if (!project) return <div style={{ maxWidth: 1100, margin: '0 auto', padding: 24, color: C.textMuted }}>Loading project...</div>
+  if (!project) return <LoadingScreen label={t('Loading community…')} />
 
   const gatedTab = (tab) =>
     needsRecheck && recheckedId !== id
-      ? <div style={{ padding: 40, textAlign: 'center', color: C.textMuted }}>Loading...</div>
+      ? <LoadingScreen label={t('Checking your access…')} minHeight={240} />
       : isVerified
         ? tab
         : <LockedGate project={project} isLoggedIn={!!user} />
@@ -172,9 +176,9 @@ export default function ProjectPage() {
   // Community pages are the long tail worth ranking for — someone googling
   // their building by name. The page is public even when signed out
   // (LockedGate names the project), so a crawler has real content to index.
-  const seoDescription =
-    `Connect with verified owners and residents of ${project.name} in ${project.city}, ${project.state}. ` +
-    'Private forum, live chat, polls, defect reports, and shared documents — residents only, no management, no strangers.'
+  const seoDescription = t('Connect with verified owners and residents of {name} in {city}, {state}. Private forum, live chat, polls, defect reports, and shared documents — residents only, no management, no strangers.', {
+    name: project.name, city: project.city, state: project.state
+  })
 
   return (
     <div>
@@ -186,7 +190,7 @@ export default function ProjectPage() {
           passing null would blank the tag instead. */}
       <Seo
         path={`/project/${id}`}
-        title={`${project.name} residents community`}
+        title={t('{name} residents community', { name: project.name })}
         description={seoDescription}
         image={mediaUrl(project.coverUrl) || undefined}
         jsonLd={{
@@ -235,11 +239,11 @@ export default function ProjectPage() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <span style={glassBadge}>{project.type}</span>
-            <span style={glassBadge}>👥 {project.ownerCount} verified residents</span>
+            <span style={glassBadge}>{t(project.type)}</span>
+            <span style={glassBadge}>👥 {t('{n} verified residents', { n: project.ownerCount })}</span>
             {isVerified
-              ? <span style={glassBadge}>✓ Your access: verified</span>
-              : <span style={lockedBadge}>🔐 {user ? 'Not yet verified' : 'Login to access'}</span>
+              ? <span style={glassBadge}>✓ {t('Your access: verified')}</span>
+              : <span style={lockedBadge}>🔐 {user ? t('Not yet verified') : t('Login to access')}</span>
             }
             <ShareButton project={project} variant="hero" />
           </div>
@@ -249,15 +253,15 @@ export default function ProjectPage() {
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 24px 28px' }}>
         <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${C.border}`, marginBottom: 20, flexWrap: 'wrap' }}>
           {[
-            { to: `/project/${id}/`, end: true, label: 'Forum', gated: true },
-            { to: `/project/${id}/chat`, label: 'Chat', gated: true },
-            { to: `/project/${id}/tools`, label: 'Tools', gated: true },
-            { to: `/project/${id}/references`, label: 'References', gated: false }
-          ].map(t => (
+            { to: `/project/${id}/`, end: true, label: t('Forum'), gated: true },
+            { to: `/project/${id}/chat`, label: t('Chat'), gated: true },
+            { to: `/project/${id}/tools`, label: t('Tools'), gated: true },
+            { to: `/project/${id}/references`, label: t('References'), gated: false }
+          ].map(tab => (
             <NavLink
-              key={t.to}
-              to={t.to}
-              end={t.end}
+              key={tab.to}
+              to={tab.to}
+              end={tab.end}
               style={({ isActive }) => ({
                 padding: '10px 18px',
                 fontWeight: 600,
@@ -268,7 +272,7 @@ export default function ProjectPage() {
                 display: 'flex', alignItems: 'center', gap: 5
               })}
             >
-              {t.label} {t.gated && !isVerified && <span style={{ fontSize: 12 }}>🔐</span>}
+              {tab.label} {tab.gated && !isVerified && <span style={{ fontSize: 12 }}>🔐</span>}
             </NavLink>
           ))}
 
@@ -291,7 +295,7 @@ export default function ProjectPage() {
                 cursor: 'pointer'
               }}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>

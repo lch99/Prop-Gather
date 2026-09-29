@@ -38,11 +38,20 @@ describe('GET/POST /api/projects/:projectId/chat/:channel/messages', () => {
   it('sends and then lists a message with author info attached', async () => {
     const send = await authed(app, residentToken).post('/api/projects/p1/chat/general/messages').send({ text: 'Hello neighbours' })
     expect(send.status).toBe(201)
-    expect(send.body).toMatchObject({ sender: 'Alex Lim', unit: 'B-21-03', tier: 'Owner', verified: true, text: 'Hello neighbours' })
+    expect(send.body).toMatchObject({ sender: 'Alex Lim', unit: 'B-21-03', tier: 'Owner', verified: true, text: 'Hello neighbours', mine: true })
+    // The raw timestamp, for the page to format in the resident's timezone.
+    expect(Number.isNaN(Date.parse(send.body.createdAt))).toBe(false)
 
     const list = await authed(app, residentToken).get('/api/projects/p1/chat/general/messages')
     expect(list.body).toHaveLength(1)
     expect(list.body[0].text).toBe('Hello neighbours')
+  })
+
+  it("marks a message as mine only for its sender", async () => {
+    await authed(app, residentToken).post('/api/projects/p1/chat/general/messages').send({ text: 'from Alex' })
+    const other = await verifiedResident(app, 'p1')
+    const list = await authed(app, other.token).get('/api/projects/p1/chat/general/messages')
+    expect(list.body[0].mine).toBe(false)
   })
 
   it('preserves send order across multiple messages', async () => {

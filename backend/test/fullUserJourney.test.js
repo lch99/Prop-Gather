@@ -107,7 +107,9 @@ describe('full user journey — register through every gated resource', () => {
     const seededPoll = polls.body.find(p => p.id === 'poll2-1')
     expect(seededPoll).toBeTruthy()
     const pollOption = seededPoll.options[0]
-    const beforeVotes = pollOption.votes
+    expect(pollOption.votes).toBeNull() // hidden until this resident votes
+    const adminPolls = await authed(app, admin.token).get('/api/projects/p2/polls')
+    const beforeVotes = adminPolls.body.find(p => p.id === 'poll2-1').options[0].votes
     await authed(app, user.token).post(`/api/projects/p2/polls/${seededPoll.id}/vote`).send({ optionId: pollOption.id })
     const afterSecondPollVote2 = await authed(app, user.token).post(`/api/projects/p2/polls/${seededPoll.id}/vote`).send({ optionId: pollOption.id })
     expect(afterSecondPollVote2.body.options.find(o => o.id === pollOption.id).votes).toBe(beforeVotes + 1)

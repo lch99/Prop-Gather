@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { C, card } from '../theme'
+import { useT } from '../i18n'
 
 export const MAX_FILES = 6
 export const MAX_FILE_MB = 5
@@ -35,7 +36,6 @@ const fileType = (file) => file.type || TYPES_BY_EXTENSION[file.name.split('.').
 
 // Size errors name the actual size so "too big" is actionable rather than abstract.
 const formatMb = (bytes) => (bytes / (1024 * 1024)).toFixed(1)
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 const revokePreview = (attachment) => {
   if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
@@ -48,6 +48,7 @@ const revokePreview = (attachment) => {
 // Nothing is read into memory or uploaded here: src/api.js uploads the files
 // straight to storage when the form is submitted.
 export function useAttachments(max = MAX_FILES) {
+  const t = useT()
   const [attachments, setAttachments] = useState([])
   const [error, setError] = useState('')
 
@@ -67,27 +68,35 @@ export function useAttachments(max = MAX_FILES) {
       // (tell them to remove one — "you can add 0 more" is not an instruction).
       setError(
         room === 0
-          ? `You've already attached the maximum of ${plural(max, 'file')}. Remove one to add another.`
+          ? t(max === 1
+            ? "You've already attached the maximum of {max} file. Remove one to add another."
+            : "You've already attached the maximum of {max} files. Remove one to add another.", { max })
           : attachments.length === 0
-            ? `You can attach up to ${plural(max, 'file')} here.`
-            : `You can only add ${plural(room, 'more file')} — ${plural(max, 'file')} in total.`
+            ? t(max === 1 ? 'You can attach up to {max} file here.' : 'You can attach up to {max} files here.', { max })
+            : t(room === 1
+              ? 'You can only add {room} more file — {max} files in total.'
+              : 'You can only add {room} more files — {max} files in total.', { room, max })
       )
       return
     }
     const tooBig = files.find(f => f.size > MAX_FILE_MB * 1024 * 1024)
     if (tooBig) {
-      setError(`"${tooBig.name}" is ${formatMb(tooBig.size)} MB — files need to be under ${MAX_FILE_MB} MB. Please pick a smaller one.`)
+      setError(t('"{name}" is {size} MB — files need to be under {max} MB. Please pick a smaller one.', {
+        name: tooBig.name, size: formatMb(tooBig.size), max: MAX_FILE_MB
+      }))
       return
     }
     const unsupported = files.find(f => !ALLOWED_TYPES.has(fileType(f)))
     if (unsupported) {
-      setError(`"${unsupported.name}" isn't a file type we can take. Please attach a photo (JPG, PNG, WebP or GIF), a PDF or a Word document.`)
+      setError(t(`"{name}" isn't a file type we can take. Please attach a photo (JPG, PNG, WebP or GIF), a PDF or a Word document.`, { name: unsupported.name }))
       return
     }
     const existingBytes = attachments.reduce((sum, a) => sum + (a.size || 0), 0)
     const newBytes = files.reduce((sum, f) => sum + f.size, 0)
     if (existingBytes + newBytes > MAX_TOTAL_MB * 1024 * 1024) {
-      setError(`Your files add up to ${formatMb(existingBytes + newBytes)} MB — the total needs to stay under ${MAX_TOTAL_MB} MB. Please remove one or pick smaller files.`)
+      setError(t('Your files add up to {size} MB — the total needs to stay under {max} MB. Please remove one or pick smaller files.', {
+        size: formatMb(existingBytes + newBytes), max: MAX_TOTAL_MB
+      }))
       return
     }
     setAttachments(a => [...a, ...files.map(file => {
@@ -110,7 +119,8 @@ export function useAttachments(max = MAX_FILES) {
 }
 
 // Upload control: button + removable previews + inline error. For use inside a form.
-export function AttachmentPicker({ attachments, addFiles, removeAttachment, error, label = 'Add photos or files', max = MAX_FILES, compact = false }) {
+export function AttachmentPicker({ attachments, addFiles, removeAttachment, error, label, max = MAX_FILES, compact = false }) {
+  const t = useT()
   return (
     <div style={{ display: 'grid', gap: 10 }}>
       <div>
@@ -121,7 +131,7 @@ export function AttachmentPicker({ attachments, addFiles, removeAttachment, erro
             background: C.blueLight, color: C.blue, fontSize: 14, fontWeight: 600
           }}
         >
-          📎 {label}
+          📎 {label ?? t('Add photos or files')}
           <input
             type="file"
             multiple
@@ -132,7 +142,9 @@ export function AttachmentPicker({ attachments, addFiles, removeAttachment, erro
         </label>
         {!compact && (
           <div style={{ marginTop: 5, fontSize: 12, color: C.textFaint }}>
-            Up to {plural(max, 'file')} · {MAX_FILE_MB} MB per file · {MAX_TOTAL_MB} MB total
+            {t(max === 1 ? 'Up to {max} file · {perFile} MB per file · {total} MB total' : 'Up to {max} files · {perFile} MB per file · {total} MB total', {
+              max, perFile: MAX_FILE_MB, total: MAX_TOTAL_MB
+            })}
           </div>
         )}
       </div>
@@ -158,7 +170,7 @@ export function AttachmentPicker({ attachments, addFiles, removeAttachment, erro
               <button
                 type="button"
                 onClick={() => removeAttachment(i)}
-                aria-label={`Remove ${a.name}`}
+                aria-label={t('Remove {name}', { name: a.name })}
                 style={{
                   position: 'absolute', top: -8, right: -8, width: 24, height: 24, borderRadius: 999,
                   border: 'none', background: C.danger, color: '#fff', fontSize: 14, fontWeight: 700,

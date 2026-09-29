@@ -4,6 +4,8 @@
 // importing the whole API surface: api.js imports this module, auth.jsx imports
 // both, and routing the token through api.js instead would make that a cycle.
 
+import { translate } from './i18n.jsx'
+
 // Where the backend lives. `/api` (same origin) is the right default for a
 // deployment that puts a reverse proxy in front of Express — see VPS_SETUP.md.
 // The GitHub Pages demo isn't same-origin as its API, so that build needs a full
@@ -79,6 +81,10 @@ export function clearToken() {
 // tell "your password is too short" from "the server is down" when it matters.
 // `message` is always safe to show a resident: the backend writes 4xx messages
 // for end users and replaces 5xx ones with a generic line.
+//
+// The backend writes those messages in English only. They are translated here,
+// on the way in, against the list in src/locales/*.js; one that isn't listed
+// (usually a message with a number or a name in it) stays in English.
 export class ApiError extends Error {
   constructor(message, { status = 0, details } = {}) {
     super(message)
@@ -135,7 +141,7 @@ export async function request(path, { method = 'GET', body, query } = {}) {
   } catch {
     // fetch only rejects on a transport-level failure — server down, DNS, or a
     // blocked CORS preflight. Anything the server actually answered lands below.
-    throw new ApiError("We can't reach PropGather right now. Please check your connection and try again.", { status: 0 })
+    throw new ApiError(translate("We can't reach PropGather right now. Please check your connection and try again."), { status: 0 })
   }
 
   const payload = await readBody(res)
@@ -148,7 +154,7 @@ export async function request(path, { method = 'GET', body, query } = {}) {
       clearToken()
       onSessionExpired?.()
     }
-    throw new ApiError(payload?.error || 'Something went wrong. Please try again.', {
+    throw new ApiError(translate(payload?.error || 'Something went wrong. Please try again.'), {
       status: res.status,
       details: payload?.details
     })
@@ -172,13 +178,13 @@ export async function uploadToStorage(uploadUrl, blob, contentType) {
       body: blob
     })
   } catch {
-    throw new ApiError("We couldn't upload your file. Please check your connection and try again.", { status: 0 })
+    throw new ApiError(translate("We couldn't upload your file. Please check your connection and try again."), { status: 0 })
   }
 
   if (!res.ok) {
     // S3 replies in XML, which is no use to a resident. The common causes are a
     // bucket CORS rule that doesn't list this origin (see
     // backend/infra/s3-cors.json) and a URL that sat unused past its 5 minutes.
-    throw new ApiError("We couldn't upload your file to secure storage. Please try again.", { status: res.status })
+    throw new ApiError(translate("We couldn't upload your file to secure storage. Please try again."), { status: res.status })
   }
 }

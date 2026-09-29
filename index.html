@@ -104,7 +104,34 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <!--
+      Boot splash: what a phone on a slow connection shows while the app's
+      JavaScript (and, for a Malay or Chinese reader, their language file)
+      downloads, instead of a blank white page. React replaces everything inside
+      #root on its first render, so this needs no code to remove. Plain HTML and
+      CSS on purpose: nothing else has loaded yet. Matches LoadingScreen in
+      src/components/Loading.jsx.
+    -->
+    <style>
+      .pg-boot { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: #F7FAFD; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: #4B5563; }
+      .pg-boot-mark { position: relative; width: 84px; height: 84px; }
+      .pg-boot-ring { position: absolute; inset: 0; border-radius: 50%; border: 4px solid #E7F0FA; border-top-color: #4081C6; animation: pg-boot-spin .9s linear infinite; }
+      .pg-boot-tile { position: absolute; inset: 13px; border-radius: 16px; background: #fff; box-shadow: 0 6px 20px rgba(64,129,198,.12); display: flex; align-items: center; justify-content: center; padding: 8px; }
+      .pg-boot-tile img { width: 100%; height: 100%; object-fit: contain; }
+      .pg-boot-name { font-weight: 800; font-size: 18px; color: #1B3A5C; letter-spacing: -0.01em; }
+      .pg-boot-name span { color: #4081C6; }
+      @keyframes pg-boot-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .pg-boot-ring { animation-duration: 2.4s; } }
+    </style>
+    <div id="root">
+      <div class="pg-boot" role="status" aria-label="Loading · Memuatkan · 加载中">
+        <div class="pg-boot-mark">
+          <div class="pg-boot-ring"></div>
+          <div class="pg-boot-tile"><img src="/brand/propgather-icon.png" alt="" /></div>
+        </div>
+        <div class="pg-boot-name">PropGather<span>.com.my</span></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

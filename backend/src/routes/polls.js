@@ -13,7 +13,10 @@ export const pollsRouter = Router({ mergeParams: true })
 // synchronous version ran 2 + N queries per poll, which was fine in-process and
 // is a round trip each against MySQL — a project with several polls turned one
 // page load into dozens of them.
-async function serialize(db, row, userId) {
+//
+// Counts are withheld (null) until the viewer has voted, admins excepted — the
+// same rule as forum-thread polls; see loadPolls in forum.js for why.
+async function serialize(db, row, viewer) {
   const [options, myVote] = await Promise.all([
     db.all(`
       SELECT o.id, o.label, COUNT(v.option_id) AS votes
@@ -23,22 +26,23 @@ async function serialize(db, row, userId) {
       GROUP BY o.id, o.label, o.position
       ORDER BY o.position
     `, [row.id]),
-    db.get('SELECT option_id FROM poll_votes WHERE poll_id = ? AND user_id = ?', [row.id, userId])
+    db.get('SELECT option_id FROM poll_votes WHERE poll_id = ? AND user_id = ?', [row.id, viewer.id])
   ])
+  const showCounts = !!myVote || viewer.role === 'admin'
 
   return {
     id: row.id,
     question: row.question,
     expiresAt: row.expires_at,
     votedByMe: myVote ? myVote.option_id : false,
-    options: options.map(o => ({ id: o.id, label: o.label, votes: Number(o.votes) }))
+    options: options.map(o => ({ id: o.id, label: o.label, votes: showCounts ? Number(o.votes) : null }))
   }
 }
 
 pollsRouter.get('/', requireAuth, requireMembership, wrap(async (req, res) => {
   const db = getDb()
   const rows = await db.all('SELECT * FROM polls WHERE project_id = ?', [req.params.projectId])
-  res.json(await Promise.all(rows.map(r => serialize(db, r, req.user.id))))
+  res.json(await Promise.all(rows.map(r => serialize(db, r, req.user))))
 }))
 
 const voteSchema = z.object({ optionId: z.string().min(1, 'optionId is required') })
@@ -55,7 +59,7 @@ pollsRouter.post('/:pollId/vote', requireAuth, requireMembership, validate(voteS
   // voting idempotent — a second vote from the same resident is silently
   // dropped rather than counted twice.
   await db.run('INSERT IGNORE INTO poll_votes (poll_id, user_id, option_id) VALUES (?, ?, ?)', [poll.id, req.user.id, option.id])
-  res.json(await serialize(db, poll, req.user.id))
+  res.json(await serialize(db, poll, req.user))
 }))
 
 // Admin-only: unlike a forum thread or petition, a community poll has no
