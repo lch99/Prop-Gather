@@ -366,15 +366,27 @@ input:focus, textarea:focus, select:focus {
   .pg-lang-mobile { display: none !important; }
 }
 
-/* header language picker (components/LanguageSwitcher.jsx) — the real <select>
-   is invisible on top of the pill, so the pill has to show its focus ring */
-.pg-lang:focus-within {
+/* header language picker (components/LanguageSwitcher.jsx) */
+.pg-lang:focus-visible {
   outline: 3px solid #fff;
   outline-offset: 2px;
 }
 
 .pg-lang:hover {
   background: rgba(255, 255, 255, 0.26) !important;
+}
+
+.pg-lang-item:hover {
+  background: #F7FAFD !important;
+}
+
+.pg-lang-item[aria-checked="true"]:hover {
+  background: #DCEAF7 !important;
+}
+
+.pg-lang-item:focus-visible {
+  outline: 2px solid #4081C6;
+  outline-offset: -2px;
 }
 
 /* landing page: PropGather-vs-group-chat table. Below a 28px tick, the two
